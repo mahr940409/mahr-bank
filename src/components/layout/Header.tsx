@@ -7,7 +7,6 @@ import {
   CreditCard,
   FileText,
   Settings,
-  Landmark,
   TrendingUp,
   Globe,
   Gem,
@@ -91,7 +90,7 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-2 shrink-0">
-          <Landmark className="h-7 w-7 text-primary" />
+          <img src="/mahr-bank-emblem.png" alt="MAHR Bank" className="h-8 w-8 rounded-md object-cover" />
           <span className="text-lg font-bold tracking-tight">MAHR Bank</span>
         </div>
 

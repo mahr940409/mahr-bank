@@ -5,7 +5,6 @@ import {
   CreditCard,
   FileText,
   Settings,
-  Landmark,
   TrendingUp,
   Globe,
   Gem,
@@ -114,7 +113,7 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border/60 py-4">
         <div className={cn("flex items-center gap-2.5 px-2", collapsed && "justify-center px-0")}>
           <div className="h-9 w-9 rounded-md bg-gradient-to-br from-sidebar-primary to-sidebar-primary/70 flex items-center justify-center shrink-0 shadow-sm">
-            <Landmark className="h-5 w-5 text-sidebar-primary-foreground" />
+            <img src="/mahr-bank-emblem.png" alt="MAHR Bank" className="h-full w-full rounded-md object-cover" />
           </div>
           {!collapsed && (
             <div className="flex flex-col leading-tight min-w-0">
