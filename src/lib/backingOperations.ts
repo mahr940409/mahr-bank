@@ -24,8 +24,12 @@ const num = (v: any) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 /** Rate 1 unit -> PDH. PDH is always 1 (the only fixed value). */
 export async function getRateToPdh(iso: string): Promise<number> {
   if (iso === 'PDH') return 1;
-  const { data } = await supabase.from('currencies').select('exchange_rate_to_pdh').eq('iso_symbol', iso).maybeSingle();
-  const r = Number((data as any)?.exchange_rate_to_pdh);
+  const { data } = await supabase.from('currencies').select('*').eq('iso_symbol', iso).maybeSingle();
+  if ((data as any)?.is_fixed_rate && ['LDH', 'BDH'].includes(iso)) return Number((data as any).exchange_rate_to_pdh);
+  const circulation = Math.max(0, Number((data as any)?.printed_amount || 0) - Number((data as any)?.burned_amount || 0));
+  const r = circulation > 0
+    ? Math.max(0, Number((data as any)?.pdh_reserves || 0)) / circulation
+    : Number((data as any)?.exchange_rate_to_pdh);
   if (!r || r <= 0) throw new Error(`La moneda ${iso} no tiene valor definido.`);
   return r;
 }

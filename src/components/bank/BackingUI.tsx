@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { formatNumber } from '@/lib/currencyUtils';
 import type { BackingLine } from '@/lib/backingOperations';
 
+const isFixedCurrency = (iso: string) => ['PDH', 'LDH', 'BDH'].includes(iso);
+
 /** Selector with every registered currency (alphabetical). `exclude` hides a currency (e.g. the bank's own). */
 export function BackingCurrencySelect({ value, onChange, exclude }: { value: string; onChange: (v: string) => void; exclude?: string }) {
   const [list, setList] = useState<{ iso: string; rate: number }[]>([]);
@@ -24,7 +26,7 @@ export function BackingCurrencySelect({ value, onChange, exclude }: { value: str
       <SelectContent className="max-h-[200px]">
         {(list.length ? list : [{ iso: 'PDH', rate: 1 }]).map((c) => (
           <SelectItem key={c.iso} value={c.iso}>
-            {c.iso} {c.iso === 'PDH' ? '· fijo' : `· 1 = ${formatNumber(c.rate)} PDH`}
+            {c.iso} {isFixedCurrency(c.iso) ? '· fija' : `· 1 = ${formatNumber(c.rate)} PDH (variable)`}
           </SelectItem>
         ))}
       </SelectContent>
@@ -63,7 +65,7 @@ export function BackingTable({ lines, title = 'Respaldo', description }: { lines
                 <TableRow key={l.id}>
                   <TableCell>
                     <Badge variant="outline">{l.currency_iso}</Badge>{' '}
-                    <span className="text-xs text-muted-foreground">{l.currency_iso === 'PDH' ? 'fijo' : 'variable'}</span>
+                    <span className="text-xs text-muted-foreground">{isFixedCurrency(l.currency_iso) ? 'fija' : 'variable'}</span>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{formatNumber(l.amount)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatNumber(l.frozen)}</TableCell>

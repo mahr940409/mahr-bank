@@ -213,6 +213,33 @@ function BankDetail({
         </div>
       </section>
 
+      <section className="space-y-3" aria-labelledby="custody-title">
+        <h2 id="custody-title" className="text-lg font-semibold">Custodias separadas</h2>
+        <div className="grid gap-3 md:grid-cols-3">
+          {[
+            ['own_resources', 'Recursos propios del Banco Nacional', 'Se conservan en el banco y no respaldan moneda ni operaciones internacionales.'],
+            ['currency_backing', 'Respaldo de la moneda nacional en MAHR', 'Custodiado por MAHR y destinado al valor de la moneda.'],
+            ['international_backing', 'Respaldo internacional en MAHR', 'Custodiado por MAHR para operaciones internacionales.'],
+          ].map(([type, title, description]) => {
+            const rows = (bank.custodyAccounts || []).filter((row: any) => row.custody_type === type);
+            const total = type === 'own_resources' && rows.length === 0
+              ? bank.metrics.available_real
+              : rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+            const frozen = type === 'international_backing'
+              ? bank.metrics.committed_real
+              : rows.reduce((sum: number, row: any) => sum + Number(row.frozen || 0), 0);
+            const unit = type === 'own_resources' ? bank.metrics.currency_iso : 'custodia';
+            return <Card key={type}><CardHeader><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="text-sm"><p className="font-semibold">{formatNumber(total)} {unit}</p><p className="text-muted-foreground">Congelado: {formatNumber(frozen)}</p></CardContent></Card>;
+          })}
+        </div>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Cuentas del Banco Nacional</CardTitle><CardDescription>Los saldos reales de estas cuentas quedan comprometidos y reducen el efectivo propio disponible.</CardDescription></CardHeader>
+          <CardContent className="space-y-2">
+            {(bank.accounts || []).length === 0 ? <p className="text-sm text-muted-foreground">No hay cuentas nacionales registradas.</p> : (bank.accounts || []).map((account: any) => <div key={account.id} className="flex justify-between border-b py-2 text-sm"><span>{account.holder_name} · {account.account_number}</span><span className="font-medium">{formatNumber(Number(account.balance_real))} {bank.metrics.currency_iso}</span></div>)}
+          </CardContent>
+        </Card>
+      </section>
+
       <Tabs defaultValue="accounts">
         <TabsList className="h-auto flex flex-wrap justify-start gap-1">
           <TabsTrigger value="accounts">Cuentas</TabsTrigger>
@@ -294,8 +321,6 @@ function BankDetail({
             <Button onClick={() => { setPrefillAccountId(null); setOpenOp('withdraw'); }} variant="outline"><Plus className="h-4 w-4 mr-1 rotate-45" /> Retiro nacional</Button>
             <Button onClick={() => { setPrefillAccountId(null); setOpenOp('transfer'); }}><ArrowDownUp className="h-4 w-4 mr-1" /> Transferencia nacional</Button>
             <Button onClick={() => { setPrefillAccountId(null); setOpenOp('intl'); }} variant="default"><Send className="h-4 w-4 mr-1" /> Envío internacional (MAHR)</Button>
-            <Button onClick={() => { setPrefillAccountId(null); setOpenOp('mahr_send'); }} variant="secondary"><Send className="h-4 w-4 mr-1" /> Enviar a cuenta MAHR</Button>
-            <Button onClick={() => { setPrefillAccountId(null); setOpenOp('mahr_receive'); }} variant="secondary"><ArrowDownUp className="h-4 w-4 mr-1" /> Recibir desde cuenta MAHR</Button>
           </CardContent></Card>
         </TabsContent>
 

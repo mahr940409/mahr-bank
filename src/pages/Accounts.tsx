@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Account } from "@/types/bank";
 import { Loader2, Plus, Search, Globe, ChevronRight, Building2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { convertToPDH, formatNumber } from "@/lib/currencyUtils";
+import { supabase } from "@/integrations/supabase/client";
 
 interface CountryGroup {
   country: string;
@@ -22,7 +23,22 @@ export default function Accounts() {
   const { accounts, bankMainAccount, loading, createAccount } = useBankData();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [mahrCustody, setMahrCustody] = useState({ currencyPdh: 0, internationalPdh: 0 });
   const navigate = useNavigate();
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from('currencies').select('pdh_reserves').eq('iso_symbol', 'KYD').maybeSingle(),
+      supabase.from('bank_backings' as any).select('amount, currency_iso').eq('bank_type', 'national'),
+    ]).then(async ([currency, backing]) => {
+      const currencyPdh = Number((currency.data as any)?.pdh_reserves || 0);
+      const rows = (backing.data as any[]) || [];
+      const currencies = await supabase.from('currencies').select('iso_symbol, exchange_rate_to_pdh');
+      const rates = Object.fromEntries(((currencies.data as any[]) || []).map(c => [c.iso_symbol, Number(c.exchange_rate_to_pdh) || 0]));
+      const internationalPdh = rows.reduce((sum, row) => sum + Number(row.amount || 0) * (row.currency_iso === 'PDH' ? 1 : (rates[row.currency_iso] || 0)), 0);
+      setMahrCustody({ currencyPdh, internationalPdh });
+    });
+  }, []);
 
   const countryGroups = useMemo<CountryGroup[]>(() => {
     const map = new Map<string, Account[]>();
@@ -42,6 +58,12 @@ export default function Accounts() {
       .filter((g) => g.country.toLowerCase().includes(searchTerm.toLowerCase()))
       .sort((a, b) => a.country.localeCompare(b.country));
   }, [accounts, searchTerm]);
+
+  const committedUsersPdh = useMemo(
+    () => accounts.reduce((sum, account) => sum + convertToPDH(account.balance, account.currency || 'PDH'), 0),
+    [accounts],
+  );
+  const grossMahrCustodyPdh = Number(bankMainAccount?.balance || 0) + mahrCustody.currencyPdh + mahrCustody.internationalPdh;
 
   if (loading) {
     return (
@@ -92,6 +114,15 @@ export default function Accounts() {
                 }}
                 onClick={() => navigate(`/accounts/${bankMainAccount.id}`)}
               />
+              <div className="md:col-span-2 rounded-lg border bg-muted/30 p-4 grid gap-3 sm:grid-cols-2">
+                <div><p className="text-sm text-muted-foreground">Respaldo KYD en MAHR</p><p className="text-xl font-semibold">{formatNumber(mahrCustody.currencyPdh)} PDH</p></div>
+                <div><p className="text-sm text-muted-foreground">Respaldo internacional en MAHR</p><p className="text-xl font-semibold">{formatNumber(mahrCustody.internationalPdh)} PDH</p></div>
+              </div>
+              <div className="md:col-span-3 rounded-lg border border-primary/30 bg-primary/5 p-4 grid gap-3 sm:grid-cols-3">
+                <div><p className="text-sm text-muted-foreground">Arcas brutas registradas</p><p className="text-xl font-semibold">{formatNumber(grossMahrCustodyPdh)} PDH</p></div>
+                <div><p className="text-sm text-muted-foreground">Comprometido en cuentas de usuarios</p><p className="text-xl font-semibold">{formatNumber(committedUsersPdh)} PDH</p></div>
+                <div><p className="text-sm text-muted-foreground">Disponible después de compromisos</p><p className="text-xl font-semibold">{formatNumber(Math.max(0, grossMahrCustodyPdh - committedUsersPdh))} PDH</p></div>
+              </div>
             </div>
           </CardContent>
         </Card>

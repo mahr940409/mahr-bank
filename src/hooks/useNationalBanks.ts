@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  NationalBank, NationalAccount, NationalTx, BankMetrics,
+  NationalBank, NationalAccount, NationalTx, BankMetrics, CustodyAccount,
   computeMetrics,
   createNationalBank, deleteNationalBank, setBankStatus,
   createNationalAccount, deleteNationalAccount, updateNationalAccount,
@@ -19,6 +19,7 @@ export interface NationalBankEnriched extends NationalBank {
   country?: CountryRecord;
   currency?: CurrencyRecord;
   accounts: NationalAccount[];
+  custodyAccounts: CustodyAccount[];
   metrics: BankMetrics;
 }
 
@@ -28,18 +29,21 @@ export function useNationalBanks() {
   const [accounts, setAccounts] = useState<NationalAccount[]>([]);
   const [txs, setTxs] = useState<NationalTx[]>([]);
   const [backings, setBackings] = useState<BackingRow[]>([]);
+  const [custodies, setCustodies] = useState<CustodyAccount[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [b, a, t, bk] = await Promise.all([
+    const [b, a, t, bk, c] = await Promise.all([
       supabase.from('national_banks').select('*').order('created_at', { ascending: true }),
       supabase.from('national_bank_accounts').select('*').order('created_at', { ascending: false }),
       supabase.from('national_bank_transactions').select('*').order('created_at', { ascending: false }).limit(500),
       supabase.from('bank_backings' as any).select('*').eq('bank_type', 'national'),
+      supabase.from('national_bank_custody_accounts' as any).select('*'),
     ]);
     if (bk.data) setBackings((bk.data as any[]).map(r => ({ ...r, amount: Number(r.amount), frozen: Number(r.frozen) })));
     if (b.data) setBanks(b.data as unknown as NationalBank[]);
+    if (c.data) setCustodies(c.data as unknown as CustodyAccount[]);
     if (a.data) setAccounts(a.data as unknown as NationalAccount[]);
     if (t.data) setTxs(t.data as unknown as NationalTx[]);
     // Refresh currencies so KYD printed_amount reflects the new mirror value
@@ -81,7 +85,7 @@ export function useNationalBanks() {
       committedRealShared: sharedCommitted,
       backings: enrichBackings(backings.filter(x => x.bank_id === b.id), rates),
     });
-    return { ...b, country, currency, accounts: accs, metrics };
+    return { ...b, country, currency, accounts: accs, metrics, custodyAccounts: custodies.filter((row) => row.national_bank_id === b.id) };
   });
 
   const reload = async () => { await Promise.all([load(), reloadCountries()]); };

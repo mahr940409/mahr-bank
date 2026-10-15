@@ -65,6 +65,15 @@ export interface BankMetrics {
   currency_rate_to_pdh: number; // 1 local = X PDH
 }
 
+export interface CustodyAccount {
+  id: string;
+  national_bank_id: string;
+  custody_type: 'own_resources' | 'currency_backing' | 'international_backing';
+  currency_iso: string;
+  amount: number;
+  frozen: number;
+}
+
 // ---------- Helpers ----------
 
 function num(v: any): number {
@@ -135,10 +144,22 @@ export async function createNationalBank(countryId: string, name: string): Promi
   const { data: existing } = await supabase
     .from('national_banks').select('id').eq('country_id', countryId).maybeSingle();
   if (existing) throw new Error('Este país ya tiene un Banco Nacional. Solo se permite uno por país.');
-  const { error } = await supabase
+  const { data: created, error } = await supabase
     .from('national_banks')
-    .insert({ country_id: countryId, name } as any);
+    .insert({ country_id: countryId, name } as any)
+    .select('id')
+    .single();
   if (error) throw error;
+  const { error: accountError } = await supabase.from('national_bank_accounts').insert({
+    national_bank_id: created.id,
+    account_number: `NB-OWN-${Math.floor(Math.random() * 9000000 + 1000000)}`,
+    holder_name: `${name} · Cuenta propia`,
+    account_type: 'bank_treasury',
+    balance_real: 0,
+    balance_symbolic: 0,
+    status: 'active',
+  } as any);
+  if (accountError) throw accountError;
 }
 
 export async function deleteNationalBank(bankId: string): Promise<void> {
@@ -212,6 +233,16 @@ async function getBank(bankId: string): Promise<NationalBank> {
     .from('national_banks').select('*').eq('id', bankId).maybeSingle();
   if (error || !data) throw new Error('Banco Nacional no encontrado.');
   return data as unknown as NationalBank;
+}
+
+async function adjustTreasury(bankId: string, deltaReal: number): Promise<void> {
+  if (!deltaReal) return;
+  const { data: treasury } = await supabase.from('national_bank_accounts').select('id, balance_real').eq('national_bank_id', bankId).eq('account_type', 'bank_treasury').maybeSingle();
+  if (!treasury) throw new Error('El Banco Nacional no tiene cuenta propia operativa.');
+  const next = num(treasury.balance_real) + deltaReal;
+  if (next < -1e-9) throw new Error('Fondos propios insuficientes en la cuenta del Banco Nacional.');
+  const { error } = await supabase.from('national_bank_accounts').update({ balance_real: Math.max(0, next) } as any).eq('id', treasury.id);
+  if (error) throw error;
 }
 
 /** ISO de la moneda del país del banco nacional. */
@@ -356,6 +387,7 @@ export async function nationalDeposit(args: {
       throw new Error(`Dinero impreso disponible insuficiente. Disponible: ${availableReal.toFixed(2)} ${currencyIso}. Cambia a "Dinero simbólico" o reduce el monto.`);
     }
     realPart = amount;
+    await adjustTreasury(bankId, -realPart);
   } else {
     if (!backingCurrency) throw new Error('Selecciona la moneda de respaldo para dinero simbólico.');
     const ownIso = await getBankCurrencyIso(bankId);
@@ -419,6 +451,8 @@ export async function nationalWithdraw(args: {
   let symPart = Math.min(num(acc.balance_symbolic), remaining);
   remaining -= symPart;
   let realPart = remaining;
+
+  await adjustTreasury(bankId, realPart);
 
   if (symPart > 0 && acc.backing_currency) {
     const ratio = symPart / num(acc.balance_symbolic);
