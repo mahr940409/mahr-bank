@@ -1,0 +1,4 @@
+/* Layout handled by MainLayout + Tailwind. Intentionally minimal. */
+#root {
+  min-height: 100vh;
+}

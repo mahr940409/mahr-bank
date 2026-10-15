@@ -1,0 +1,170 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* MAHR Bank — Navy Trust palette + Libre Baskerville / IBM Plex Sans */
+
+@layer base {
+  :root {
+    --background: 210 33% 97%;
+    --foreground: 222 55% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 55% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 55% 12%;
+
+    /* Navy Trust: deep navy primary */
+    --primary: 224 62% 15%;
+    --primary-foreground: 214 40% 96%;
+    --primary-glow: 213 46% 43%;
+
+    --secondary: 214 32% 92%;
+    --secondary-foreground: 224 62% 15%;
+
+    --muted: 214 25% 94%;
+    --muted-foreground: 220 15% 40%;
+
+    --accent: 213 46% 43%;
+    --accent-foreground: 214 40% 96%;
+
+    --success: 158 64% 32%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 45%;
+    --warning-foreground: 224 62% 15%;
+
+    --destructive: 0 68% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 25% 87%;
+    --input: 214 25% 87%;
+    --ring: 213 46% 43%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar tokens (institutional navy) */
+    --sidebar-background: 224 62% 12%;
+    --sidebar-foreground: 214 32% 88%;
+    --sidebar-primary: 213 60% 55%;
+    --sidebar-primary-foreground: 224 62% 10%;
+    --sidebar-accent: 224 45% 20%;
+    --sidebar-accent-foreground: 214 40% 96%;
+    --sidebar-border: 224 40% 20%;
+    --sidebar-ring: 213 60% 55%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(224 62% 15%), hsl(213 46% 33%));
+    --gradient-accent: linear-gradient(135deg, hsl(213 46% 43%), hsl(213 60% 55%));
+    --gradient-success: linear-gradient(135deg, hsl(158 64% 32%), hsl(158 60% 40%));
+
+    --shadow-elegant: 0 8px 24px -12px hsl(224 62% 15% / 0.18);
+    --shadow-card: 0 1px 3px 0 hsl(222 55% 12% / 0.06), 0 1px 2px -1px hsl(222 55% 12% / 0.04);
+    --shadow-lifted: 0 12px 32px -16px hsl(224 62% 15% / 0.25);
+
+    --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 224 45% 7%;
+    --foreground: 214 32% 94%;
+
+    --card: 224 40% 11%;
+    --card-foreground: 214 32% 94%;
+
+    --popover: 224 40% 11%;
+    --popover-foreground: 214 32% 94%;
+
+    --primary: 213 60% 62%;
+    --primary-foreground: 224 45% 7%;
+    --primary-glow: 213 70% 72%;
+
+    --secondary: 224 30% 18%;
+    --secondary-foreground: 214 32% 94%;
+
+    --muted: 224 30% 16%;
+    --muted-foreground: 215 15% 65%;
+
+    --accent: 213 60% 55%;
+    --accent-foreground: 224 45% 7%;
+
+    --success: 158 60% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 224 45% 7%;
+
+    --destructive: 0 68% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 224 30% 20%;
+    --input: 224 30% 20%;
+    --ring: 213 60% 62%;
+
+    --sidebar-background: 224 50% 6%;
+    --sidebar-foreground: 214 32% 88%;
+    --sidebar-primary: 213 60% 62%;
+    --sidebar-primary-foreground: 224 50% 6%;
+    --sidebar-accent: 224 40% 14%;
+    --sidebar-accent-foreground: 214 32% 94%;
+    --sidebar-border: 224 40% 16%;
+    --sidebar-ring: 213 60% 62%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(224 45% 15%), hsl(213 60% 40%));
+    --gradient-accent: linear-gradient(135deg, hsl(213 60% 55%), hsl(213 70% 65%));
+
+    --shadow-elegant: 0 8px 24px -12px hsl(0 0% 0% / 0.45);
+    --shadow-card: 0 1px 3px 0 hsl(0 0% 0% / 0.3);
+    --shadow-lifted: 0 12px 32px -16px hsl(0 0% 0% / 0.55);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.005em;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Libre Baskerville', 'Georgia', serif;
+    letter-spacing: -0.015em;
+    font-weight: 700;
+  }
+
+  h1 { @apply tracking-tight; }
+
+  code, pre, .font-mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+}
+
+@layer components {
+  .surface-card {
+    @apply bg-card text-card-foreground border border-border rounded-lg;
+    box-shadow: var(--shadow-card);
+  }
+  .surface-elevated {
+    box-shadow: var(--shadow-elegant);
+  }
+  .divider-soft {
+    @apply border-t border-border/60;
+  }
+  .kpi-value {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+    letter-spacing: -0.02em;
+  }
+}

@@ -1,0 +1,2 @@
+ALTER TABLE public.private_banks ADD COLUMN IF NOT EXISTS cash_on_hand numeric NOT NULL DEFAULT 0;
+UPDATE public.private_banks pb SET cash_on_hand = COALESCE((SELECT SUM(balance_real) FROM public.private_bank_accounts a WHERE a.private_bank_id = pb.id),0);
