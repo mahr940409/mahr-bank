@@ -3,6 +3,8 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Toaster } from "@/components/ui/sonner";
+import { Button } from "@/components/ui/button";
+import { LogOut } from "lucide-react";
 
 const routeTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -30,6 +32,11 @@ export function MainLayout() {
   const { pathname } = useLocation();
   const title = getTitle(pathname);
 
+  const handleLogout = () => {
+    sessionStorage.removeItem("mahr_auth");
+    window.location.reload();
+  };
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
@@ -48,6 +55,16 @@ export function MainLayout() {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleLogout}
+                title="Cerrar sesión"
+                aria-label="Cerrar sesión"
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
             </div>
           </header>
 
