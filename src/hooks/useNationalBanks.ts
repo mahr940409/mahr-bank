@@ -9,9 +9,10 @@ import {
   nationalTransfer, nationalDeposit, nationalWithdraw,
   intlTransfer,
   nationalToMahrTransfer, mahrToNationalTransfer,
+  addIssuanceReserve, withdrawIssuanceReserve,
 
 } from '@/lib/nationalBankOperations';
-import { useCountriesData, CurrencyRecord, CountryRecord } from '@/hooks/useCountriesData';
+import { useCountriesData, CurrencyRecord, CountryRecord, computeExchangeRate } from '@/hooks/useCountriesData';
 import { BackingRow, enrichBackings } from '@/lib/backingOperations';
 
 export interface NationalBankEnriched extends NationalBank {
@@ -76,7 +77,7 @@ export function useNationalBanks() {
       accounts: accs,
       printedTotal: printed,
       currencyIso: currency?.iso_symbol || 'PDH',
-      currencyRateToPdh: Number(currency?.exchange_rate_to_pdh ?? 1),
+      currencyRateToPdh: currency ? computeExchangeRate(currency) : 1,
       committedRealShared: sharedCommitted,
       backings: enrichBackings(backings.filter(x => x.bank_id === b.id), rates),
     });
@@ -105,5 +106,7 @@ export function useNationalBanks() {
     intlTransfer: async (args: Parameters<typeof intlTransfer>[0]) => { await intlTransfer(args); await reload(); },
     nationalToMahrTransfer: async (args: Parameters<typeof nationalToMahrTransfer>[0]) => { await nationalToMahrTransfer(args); await reload(); },
     mahrToNationalTransfer: async (args: Parameters<typeof mahrToNationalTransfer>[0]) => { await mahrToNationalTransfer(args); await reload(); },
+    addIssuanceReserve: async (bankId: string, amount: number) => { await addIssuanceReserve(bankId, amount); await reload(); },
+    withdrawIssuanceReserve: async (bankId: string, amount: number) => { await withdrawIssuanceReserve(bankId, amount); await reload(); },
   };
 }

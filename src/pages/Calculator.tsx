@@ -5,16 +5,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { loadExchangeRates, convertCurrency, formatNumber } from "@/lib/currencyUtils";
+import { supabase } from "@/integrations/supabase/client";
+import { formatNumber } from "@/lib/currencyUtils";
 
 export default function Calculator() {
-  const [rates, setRates] = useState<Record<string, number>>({});
+  const [rates, setRates] = useState<Record<string, number>>({ PDH: 1 });
   const [amount, setAmount] = useState("1000");
   const [from, setFrom] = useState("PDH");
   const [to, setTo] = useState("KYD");
 
   useEffect(() => {
-    loadExchangeRates().then(setRates);
+    supabase.from('currencies').select('*').then(({ data }) => {
+      if (!data) return;
+      const next: Record<string, number> = { PDH: 1 };
+      (data as any[]).forEach((currency) => {
+        const circulation = Math.max(0, Number(currency.printed_amount || 0) - Number(currency.burned_amount || 0));
+        const initial = Number(currency.initial_units_per_pdh || 0);
+        next[currency.iso_symbol] = circulation > 0
+          ? Math.max(0, Number(currency.pdh_reserves || 0)) / circulation
+          : (initial > 0 ? 1 / initial : Number(currency.exchange_rate_to_pdh || 1));
+      });
+      setRates(next);
+    });
   }, []);
 
   const currencies = useMemo(() => Object.keys(rates).sort(), [rates]);
@@ -22,7 +34,11 @@ export default function Calculator() {
     const n = Number(amount.replace(/\./g, "").replace(",", "."));
     return isNaN(n) ? 0 : n;
   }, [amount]);
-  const result = useMemo(() => convertCurrency(parsed, from, to), [parsed, from, to, rates]);
+  const result = useMemo(() => {
+    const fromRate = rates[from] ?? 1;
+    const toRate = rates[to] ?? 1;
+    return from === to ? parsed : (parsed * fromRate) / toRate;
+  }, [parsed, from, to, rates]);
 
   const CurSelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
     <Select value={value} onValueChange={onChange}>
@@ -52,7 +68,7 @@ export default function Calculator() {
           <div className="rounded-md border bg-muted/40 p-4">
             <div className="text-xs uppercase tracking-widest text-muted-foreground">Resultado</div>
             <div className="font-mono text-2xl font-bold break-all">{formatNumber(result)} {to}</div>
-            <div className="text-xs text-muted-foreground mt-2">1 {from} = {formatNumber(convertCurrency(1, from, to))} {to}</div>
+            <div className="text-xs text-muted-foreground mt-2">1 {from} = {formatNumber((rates[from] ?? 1) / (rates[to] ?? 1))} {to}</div>
           </div>
         </CardContent>
       </Card>

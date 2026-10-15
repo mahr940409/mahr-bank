@@ -18,8 +18,8 @@ export interface CurrencyRecord {
 /**
  * Compute the exchange rate (1 unit of currency = X PDH) from economic data.
  * circulation = printed - burned
- * If reserves > 0 and circulation > 0: 1 PDH = (circulation / reserves) units => 1 unit = reserves/circulation PDH
- * Otherwise: fallback to initial parity (1 PDH = initial_units_per_pdh units)
+ * With circulation, the current value is always reserves / circulation.
+ * The initial parity is only used before any units have been issued.
  */
 export function computeExchangeRate(c: {
   pdh_reserves: number;
@@ -28,9 +28,7 @@ export function computeExchangeRate(c: {
   initial_units_per_pdh: number;
 }): number {
   const circulation = Math.max(0, (c.printed_amount || 0) - (c.burned_amount || 0));
-  if (circulation > 0 && c.pdh_reserves > 0) {
-    return c.pdh_reserves / circulation;
-  }
+  if (circulation > 0) return Math.max(0, c.pdh_reserves || 0) / circulation;
   const initial = c.initial_units_per_pdh || 1;
   return initial > 0 ? 1 / initial : 1;
 }
@@ -54,7 +52,20 @@ export function useCountriesData() {
       .from('currencies')
       .select('*')
       .order('name');
-    if (!error && data) setCurrencies(data as unknown as CurrencyRecord[]);
+    if (!error && data) {
+      const existing = new Set((data as any[]).map((currency) => currency.iso_symbol));
+      const systemCurrencies = [
+        { name: 'Lingote de Hierro', iso_symbol: 'LDH', exchange_rate_to_pdh: 9, is_fixed_rate: true, initial_units_per_pdh: 1 / 9 },
+        { name: 'Bloque de Hierro', iso_symbol: 'BDH', exchange_rate_to_pdh: 81, is_fixed_rate: true, initial_units_per_pdh: 1 / 81 },
+      ].filter((currency) => !existing.has(currency.iso_symbol));
+      if (systemCurrencies.length > 0) {
+        await supabase.from('currencies').insert(systemCurrencies as any);
+        const refreshed = await supabase.from('currencies').select('*').order('name');
+        if (!refreshed.error && refreshed.data) setCurrencies(refreshed.data as unknown as CurrencyRecord[]);
+      } else {
+        setCurrencies(data as unknown as CurrencyRecord[]);
+      }
+    }
   }, []);
 
   const loadCountries = useCallback(async () => {

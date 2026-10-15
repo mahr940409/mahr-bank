@@ -14,7 +14,7 @@ import { es } from "date-fns/locale";
 
 export default function AccountDetail() {
   const { id } = useParams<{ id: string }>();
-  const { accounts, bankMainAccount, transactions, loans, loanPayments, loading, handleDeposit, handleWithdrawal, handleTransfer, requestLoan, payLoanInstallment } = useBankData();
+  const { accounts, bankMainAccount, transactions, loans, loanPayments, loading, handleDeposit, handleWithdrawal, handleTransfer, handleTransferToNational, requestLoan, payLoanInstallment } = useBankData();
   const [isOperationsDialogOpen, setIsOperationsDialogOpen] = useState(false);
   const [isLoanDialogOpen, setIsLoanDialogOpen] = useState(false);
 
@@ -246,6 +246,7 @@ export default function AccountDetail() {
           onDeposit={handleDeposit}
           onWithdrawal={handleWithdrawal}
           onTransfer={handleTransfer}
+          onTransferToNational={handleTransferToNational}
         />
       )}
 

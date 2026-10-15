@@ -57,8 +57,12 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
       const { data: cur, error: e1 } = await supabase.from('currencies').select('*').eq('id', currencyId).single();
       if (e1 || !cur) throw e1 || new Error('Moneda no encontrada');
       const c: any = cur;
+      const issuanceBacking = Number(c.pdh_reserves) || 0;
+      if (issuanceBacking <= 0) {
+        throw new Error('No se pueden imprimir billetes sin respaldo de emisión en Pepita de Hierro (PDH). Agrega respaldo primero.');
+      }
       const next = {
-        pdh_reserves: Number(c.pdh_reserves) || 0,
+        pdh_reserves: issuanceBacking,
         printed_amount: (Number(c.printed_amount) || 0) + amount,
         burned_amount: Number(c.burned_amount) || 0,
         initial_units_per_pdh: Number(c.initial_units_per_pdh) || 1,
@@ -81,13 +85,21 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
   };
 
   const totalPrinted = denoms.reduce((s, d) => s + d.value * NOTES_PER_BOX * d.boxes_printed, 0);
+  const printAll = async () => {
+    const pending = denoms.filter((d) => Math.floor(boxes[d.id] || 0) > 0);
+    if (pending.length === 0) {
+      toast({ title: 'Sin cajas pendientes', description: 'Indica un número mayor que 0 en al menos una denominación.', variant: 'destructive' });
+      return;
+    }
+    for (const denomination of pending) await print(denomination);
+  };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Billetes</CardTitle>
         <CardDescription>
-          Se imprime siempre por cajas de {NOTES_PER_BOX} billetes. Lo impreso se suma al total de moneda del país.
+          Se imprime siempre por cajas de {NOTES_PER_BOX} billetes. Solo el Banco Nacional emisor puede imprimir. El respaldo de emisión en Pepita de Hierro (PDH) es independiente del respaldo internacional.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -98,6 +110,9 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
           </div>
           <Button onClick={addDenom}><Plus className="h-4 w-4 mr-1" />Agregar</Button>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Valor de la moneda: respaldo de emisión en Pepita de Hierro (PDH) ÷ circulación impresa neta. La moneda digital no aumenta este total.
+        </p>
 
         {denoms.length === 0 ? (
           <p className="text-sm text-muted-foreground">Aún no hay denominaciones. Agrega la primera arriba.</p>
@@ -140,7 +155,10 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
             </TableBody>
           </Table>
         )}
-        <p className="text-sm text-muted-foreground">Total impreso en billetes: <span className="font-semibold text-foreground">{formatNumber(totalPrinted)} {iso}</span></p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">Total impreso en billetes: <span className="font-semibold text-foreground">{formatNumber(totalPrinted)} {iso}</span></p>
+          <Button onClick={printAll} disabled={busy}><Printer className="h-4 w-4 mr-1" />Imprimir todos</Button>
+        </div>
       </CardContent>
     </Card>
   );

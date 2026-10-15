@@ -16,7 +16,7 @@ import { toast } from '@/hooks/use-toast';
 import { Loader2, Plus, Trash2, Building2, ArrowLeft, ArrowDownUp, Send, Wallet, Snowflake, History, Search } from 'lucide-react';
 import { formatNumber } from '@/lib/currencyUtils';
 import { BondsPanel } from '@/components/national/BondsPanel';
-import { BanknotesPanel } from '@/components/national/BanknotesPanel';
+import { BanknotesPanel, NOTES_PER_BOX } from '@/components/national/BanknotesPanel';
 import { BackingCurrencySelect, BackingTable } from '@/components/bank/BackingUI';
 
 export default function NationalBanks() {
@@ -25,6 +25,7 @@ export default function NationalBanks() {
     createBank, deleteBank, setStatus,
     createAccount, deleteAccount,
     addBacking, withdrawBacking,
+    addIssuanceReserve, withdrawIssuanceReserve,
     nationalTransfer, nationalDeposit, nationalWithdraw,
     intlTransfer,
     nationalToMahrTransfer, mahrToNationalTransfer,
@@ -54,7 +55,7 @@ export default function NationalBanks() {
         onCreateAccount={() => setOpenAccount(true)}
         openBacking={openBacking} setOpenBacking={setOpenBacking}
         openOp={openOp} setOpenOp={setOpenOp}
-        ops={{ reload, deleteAccount, addBacking, withdrawBacking, nationalTransfer, nationalDeposit, nationalWithdraw, intlTransfer, nationalToMahrTransfer, mahrToNationalTransfer, setStatus, deleteBank: async (id: string) => { await deleteBank(id); setSelectedId(null); } }}
+        ops={{ reload, deleteAccount, addBacking, withdrawBacking, addIssuanceReserve, withdrawIssuanceReserve, nationalTransfer, nationalDeposit, nationalWithdraw, intlTransfer, nationalToMahrTransfer, mahrToNationalTransfer, setStatus, deleteBank: async (id: string) => { await deleteBank(id); setSelectedId(null); } }}
         openAccount={openAccount} setOpenAccount={setOpenAccount} createAccount={createAccount}
       />
     );
@@ -65,7 +66,7 @@ export default function NationalBanks() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Bancos Nacionales</h1>
-          <p className="text-muted-foreground">Banco oficial interno de cada país. No imprime moneda.</p>
+          <p className="text-muted-foreground">Un Banco Nacional por país; es el emisor de su moneda.</p>
         </div>
         <Button onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1" /> Crear Banco Nacional</Button>
       </div>
@@ -113,6 +114,11 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function parseAmount(value: string): number {
+  const normalized = value.trim().replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+  return Number(normalized);
+}
+
 // ---------- Detail view ----------
 function BankDetail({
   bank, allBanks, txs, onBack, openAccount, setOpenAccount, createAccount,
@@ -121,6 +127,7 @@ function BankDetail({
   const [accountSearch, setAccountSearch] = useState('');
   const [prefillAccountId, setPrefillAccountId] = useState<string | null>(null);
   const [pickerAccountId, setPickerAccountId] = useState<string | null>(null);
+  const [issuanceAmount, setIssuanceAmount] = useState('');
 
   const filteredAccounts = useMemo(() => {
     const q = accountSearch.trim().toLowerCase();
@@ -170,6 +177,26 @@ function BankDetail({
           <Metric title="Dinero total impreso" value={bank.currency ? formatNumber(Number(bank.currency.printed_amount)) : '—'} suffix={bank.metrics.currency_iso} />
           <Metric title="Moneda quemada" value={bank.currency ? formatNumber(Number(bank.currency.burned_amount)) : '—'} suffix={bank.metrics.currency_iso} />
           <Metric title="Circulación neta" value={formatNumber(bank.metrics.printed_total)} suffix={bank.metrics.currency_iso} />
+        </div>
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+          <div>
+            <h3 className="font-medium">Administrar respaldo de emisión</h3>
+            <p className="text-sm text-muted-foreground">Este respaldo determina el valor de los billetes impresos y es independiente del respaldo internacional del banco.</p>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-full max-w-xs space-y-1">
+              <Label htmlFor="issuance-reserve-amount">Monto en PDH</Label>
+              <NumberInput id="issuance-reserve-amount" min={0} step="any" value={issuanceAmount} onChange={setIssuanceAmount} placeholder="Ej. 2" />
+            </div>
+            <Button onClick={async () => {
+              try { await ops.addIssuanceReserve(bank.id, parseAmount(issuanceAmount)); setIssuanceAmount(''); toast({ title: 'Respaldo de emisión agregado' }); }
+              catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+            }}>Agregar PDH</Button>
+            <Button variant="outline" onClick={async () => {
+              try { await ops.withdrawIssuanceReserve(bank.id, parseAmount(issuanceAmount)); setIssuanceAmount(''); toast({ title: 'Respaldo de emisión retirado' }); }
+              catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+            }}>Retirar PDH</Button>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">Valor actual: 1 {bank.metrics.currency_iso} = {Number(bank.metrics.currency_rate_to_pdh).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} PDH</p>
       </section>
@@ -459,6 +486,8 @@ function OpDialog({ mode, onClose, bank, allBanks, ops, initialAccountId }: any)
   const [toBankId, setToBankId] = useState('');
   const [mahrAccountId, setMahrAccountId] = useState('');
   const [mahrAccounts, setMahrAccounts] = useState<any[]>([]);
+  const [intlDestination, setIntlDestination] = useState<'national' | 'mahr'>('national');
+  const [availableDenoms, setAvailableDenoms] = useState<any[]>([]);
 
   const sortedAccounts = useMemo(
     () => [...bank.accounts].sort((a: any, b: any) => (a.holder_name || '').localeCompare(b.holder_name || '')),
@@ -474,18 +503,27 @@ function OpDialog({ mode, onClose, bank, allBanks, ops, initialAccountId }: any)
 
   // Load MAHR accounts when needed
   useEffect(() => {
-    if (mode !== 'mahr_send' && mode !== 'mahr_receive') return;
+    if (mode !== 'mahr_send' && mode !== 'mahr_receive' && !(mode === 'intl' && intlDestination === 'mahr')) return;
     supabase.from('accounts')
       .select('id, account_number, user_name, currency, balance_pdh')
       .neq('id', 'bank-main')
       .order('user_name')
       .then(({ data }) => { if (data) setMahrAccounts(data as any[]); });
-  }, [mode]);
+  }, [mode, intlDestination]);
+
+  useEffect(() => {
+    if (mode !== 'withdraw') return;
+    supabase.from('banknote_denominations' as any)
+      .select('value, boxes_printed')
+      .eq('national_bank_id', bank.id)
+      .order('value', { ascending: false })
+      .then(({ data }) => setAvailableDenoms((data as any[]) || []));
+  }, [mode, bank.id]);
 
   const otherBanks = (allBanks || []).filter((b: any) => b.id !== bank.id);
   const toBank = otherBanks.find((b: any) => b.id === toBankId);
 
-  const reset = () => { setFromAcc(''); setToAcc(''); setAmount(''); setBackingCur('PDH'); setMoneySource('printed'); setToBankId(''); setMahrAccountId(''); };
+  const reset = () => { setFromAcc(''); setToAcc(''); setAmount(''); setBackingCur('PDH'); setMoneySource('printed'); setToBankId(''); setMahrAccountId(''); setIntlDestination('national'); };
 
   const handle = async () => {
     try {
@@ -498,19 +536,13 @@ function OpDialog({ mode, onClose, bank, allBanks, ops, initialAccountId }: any)
       } else if (mode === 'withdraw') {
         await ops.nationalWithdraw({ bankId: bank.id, fromAccountId: fromAcc, amount: amt, currencyIso: bank.metrics.currency_iso, rateToPdh: bank.metrics.currency_rate_to_pdh });
       } else if (mode === 'intl') {
-        if (!toBank) throw new Error('Selecciona banco destino.');
-        await ops.intlTransfer({
-          fromBankId: bank.id, fromAccountId: fromAcc,
-          toBankId: toBank.id, toAccountId: toAcc,
-          amountLocalFrom: amt,
-          backingCurrency: backingCur,
-          fromCurrencyIso: bank.metrics.currency_iso,
-          fromRateToPdh: bank.metrics.currency_rate_to_pdh,
-          toCurrencyIso: toBank.metrics.currency_iso,
-          toRateToPdh: toBank.metrics.currency_rate_to_pdh,
-          toAvailableReal: toBank.metrics.available_real,
-          receiverMoneySource: moneySource,
-        });
+        if (intlDestination === 'mahr') {
+          if (!mahrAccountId) throw new Error('Selecciona cuenta MAHR destino.');
+          await ops.nationalToMahrTransfer({ bankId: bank.id, fromNationalAccountId: fromAcc, toMahrAccountId: mahrAccountId, amountLocal: amt, currencyLocalIso: bank.metrics.currency_iso, rateToPdh: bank.metrics.currency_rate_to_pdh, backingCurrency: backingCur });
+        } else {
+          if (!toBank) throw new Error('Selecciona banco destino.');
+          await ops.intlTransfer({ fromBankId: bank.id, fromAccountId: fromAcc, toBankId: toBank.id, toAccountId: toAcc, amountLocalFrom: amt, backingCurrency: backingCur, fromCurrencyIso: bank.metrics.currency_iso, fromRateToPdh: bank.metrics.currency_rate_to_pdh, toCurrencyIso: toBank.metrics.currency_iso, toRateToPdh: toBank.metrics.currency_rate_to_pdh, toAvailableReal: toBank.metrics.available_real, receiverMoneySource: moneySource });
+        }
       } else if (mode === 'mahr_send') {
         if (!mahrAccountId) throw new Error('Selecciona cuenta MAHR destino.');
         await ops.nationalToMahrTransfer({
@@ -548,6 +580,22 @@ function OpDialog({ mode, onClose, bank, allBanks, ops, initialAccountId }: any)
       ? `Monto (${selectedMahr?.currency || 'moneda MAHR'})`
       : `Monto (${bank.metrics.currency_iso})`;
 
+  const withdrawalBreakdown = useMemo(() => {
+    if (mode !== 'withdraw') return null;
+    let remaining = parseFloat(amount) || 0;
+    const parts: string[] = [];
+    for (const denom of availableDenoms) {
+      const value = Number(denom.value) || 0;
+      const available = Number(denom.boxes_printed || 0) * NOTES_PER_BOX;
+      const count = value > 0 ? Math.min(available, Math.floor((remaining + 1e-9) / value)) : 0;
+      if (count > 0) {
+        parts.push(`${count} × ${formatNumber(value)}`);
+        remaining = Math.round((remaining - count * value) * 100) / 100;
+      }
+    }
+    return { parts, remaining };
+  }, [mode, amount, availableDenoms]);
+
   return (
     <Dialog open={!!mode} onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
@@ -575,6 +623,17 @@ function OpDialog({ mode, onClose, bank, allBanks, ops, initialAccountId }: any)
             </div>
           )}
           {mode === 'intl' && (
+            <div className="space-y-2"><Label>Banco destino</Label>
+              <Select value={intlDestination} onValueChange={(v: 'national' | 'mahr') => { setIntlDestination(v); setToBankId(''); setToAcc(''); setMahrAccountId(''); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="national">Banco Nacional / minibanco</SelectItem>
+                  <SelectItem value="mahr">MAHR Bank</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {mode === 'intl' && intlDestination === 'national' && (
             <div className="space-y-2"><Label>Banco Nacional destino</Label>
               <Select value={toBankId} onValueChange={setToBankId}>
                 <SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger>
@@ -582,7 +641,15 @@ function OpDialog({ mode, onClose, bank, allBanks, ops, initialAccountId }: any)
               </Select>
             </div>
           )}
-          {(mode === 'transfer' || mode === 'deposit' || mode === 'intl' || mode === 'mahr_receive') && (
+          {mode === 'intl' && intlDestination === 'mahr' && (
+            <div className="space-y-2"><Label>Cuenta MAHR destino</Label>
+              <Select value={mahrAccountId} onValueChange={setMahrAccountId}>
+                <SelectTrigger><SelectValue placeholder="Selecciona cuenta MAHR..." /></SelectTrigger>
+                <SelectContent className="max-h-[240px]">{mahrAccounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.user_name} · {a.currency} ({formatNumber(Number(a.balance_pdh))})</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          )}
+          {(mode === 'transfer' || mode === 'deposit' || (mode === 'intl' && intlDestination === 'national') || mode === 'mahr_receive') && (
             <div className="space-y-2"><Label>Cuenta nacional destino</Label>
               <Select value={toAcc} onValueChange={setToAcc}>
                 <SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger>
@@ -610,7 +677,16 @@ function OpDialog({ mode, onClose, bank, allBanks, ops, initialAccountId }: any)
           )}
           <div className="space-y-2"><Label>{amountLabel}</Label>
             <NumberInput value={amount} onChange={setAmount} /></div>
-          {(mode === 'deposit' || mode === 'intl' || mode === 'mahr_receive') && (
+          {mode === 'withdraw' && withdrawalBreakdown && (
+            <div className="rounded-md border bg-muted/40 p-3 text-sm">
+              <p className="font-medium">Entrega sugerida en billetes</p>
+              {withdrawalBreakdown.parts.length > 0 ? (
+                <p className="text-muted-foreground">{withdrawalBreakdown.parts.join(' + ')} {bank.metrics.currency_iso}</p>
+              ) : <p className="text-muted-foreground">No hay billetes disponibles para este monto.</p>}
+              {withdrawalBreakdown.remaining > 0 && <p className="mt-1 text-destructive">Faltan {formatNumber(withdrawalBreakdown.remaining)} {bank.metrics.currency_iso}; no existe una combinación exacta con los billetes disponibles.</p>}
+            </div>
+          )}
+          {(mode === 'deposit' || (mode === 'intl' && intlDestination === 'national') || mode === 'mahr_receive') && (
             <>
               <div className="space-y-2">
                 <Label>Origen del dinero</Label>

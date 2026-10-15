@@ -19,6 +19,7 @@ interface OperationsDialogProps {
   onDeposit: (accountId: string, amount: number, currency: string) => void;
   onWithdrawal: (accountId: string, amount: number, currency: string) => void;
   onTransfer: (fromAccountId: string, toAccountId: string, amount: number, currency: string) => void;
+  onTransferToNational?: (fromAccountId: string, toNationalAccountId: string, amount: number) => Promise<void>;
 }
 
 export function OperationsDialog({
@@ -29,6 +30,7 @@ export function OperationsDialog({
   onDeposit,
   onWithdrawal,
   onTransfer,
+  onTransferToNational,
 }: OperationsDialogProps) {
   const [currencies, setCurrencies] = useState<{ iso_symbol: string; name: string }[]>([]);
   
@@ -44,6 +46,7 @@ export function OperationsDialog({
   const [transferTo, setTransferTo] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [transferCurrency, setTransferCurrency] = useState('PDH');
+  const [nationalAccounts, setNationalAccounts] = useState<any[]>([]);
 
   useEffect(() => {
     if (open && selectedAccountId) {
@@ -61,6 +64,16 @@ export function OperationsDialog({
     if (open) {
       supabase.from('currencies').select('iso_symbol, name').order('name').then(({ data }) => {
         if (data) setCurrencies(data as any[]);
+      });
+      supabase.from('national_bank_accounts').select('id, account_number, holder_name, national_bank_id').then(async ({ data }) => {
+        if (!data) return;
+        const banks = await supabase.from('national_banks').select('id, name, country_id');
+        const countries = await supabase.from('countries').select('id, name, currency_id');
+        const currencies = await supabase.from('currencies').select('id, iso_symbol');
+        const countryMap = Object.fromEntries((countries.data || []).map((c: any) => [c.id, c]));
+        const currencyMap = Object.fromEntries((currencies.data || []).map((c: any) => [c.id, c.iso_symbol]));
+        const bankMap = Object.fromEntries((banks.data || []).map((b: any) => [b.id, { label: `${b.name} · ${countryMap[b.country_id]?.name || ''}`, currency: currencyMap[countryMap[b.country_id]?.currency_id] || 'moneda local' }]));
+        setNationalAccounts((data as any[]).map(a => ({ ...a, label: `${a.holder_name} · ${bankMap[a.national_bank_id]?.label || 'Banco Nacional'}`, currency: bankMap[a.national_bank_id]?.currency || 'moneda local' })));
       });
     }
   }, [open]);
@@ -105,11 +118,12 @@ export function OperationsDialog({
     }
   };
   
-  const handleTransfer = (e: React.FormEvent) => {
+  const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(transferAmount);
     if (transferFrom && transferTo && amount > 0 && transferFrom !== transferTo) {
-      onTransfer(transferFrom, transferTo, amount, transferCurrency);
+      if (transferTo.startsWith('national:') && onTransferToNational) await onTransferToNational(transferFrom, transferTo.slice(9), amount);
+      else onTransfer(transferFrom, transferTo, amount, transferCurrency);
       setTransferFrom(''); setTransferTo(''); setTransferAmount('');
     }
   };
@@ -298,7 +312,13 @@ export function OperationsDialog({
               </div>
               <div className="space-y-2">
                 <Label>Cuenta destino</Label>
-                {renderAllAccountSelect(transferTo, setTransferTo, transferFrom)}
+                <Select value={transferTo} onValueChange={setTransferTo}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar cuenta" /></SelectTrigger>
+                  <SelectContent className="max-h-[240px]">
+                    {[...accounts].filter(a => a.id !== transferFrom).map(a => <SelectItem key={a.id} value={a.id}>{a.userName} ({a.currency}: {a.balance.toFixed(2)})</SelectItem>)}
+                    {nationalAccounts.map(a => <SelectItem key={`national:${a.id}`} value={`national:${a.id}`}>{a.label} ({a.currency})</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

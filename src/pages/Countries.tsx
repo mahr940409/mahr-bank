@@ -11,6 +11,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Switch } from '@/components/ui/switch';
 import { NumberInput } from '@/components/ui/number-input';
 import { toast } from '@/hooks/use-toast';
+
+const displayCurrencyName = (currency?: { name?: string; iso_symbol?: string }) => {
+  const fixedNames: Record<string, string> = {
+    PDH: 'Pepita de Hierro',
+    LDH: 'Lingote de Hierro',
+    BDH: 'Bloque de Hierro',
+  };
+  return currency?.iso_symbol ? (fixedNames[currency.iso_symbol] || currency.name || '—') : '—';
+};
 import { Loader2, Globe, Coins, Plus, Pencil, Trash2, Lock, RefreshCw, Download, TrendingUp } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { loadExchangeRates } from '@/lib/currencyUtils';
@@ -290,7 +299,7 @@ export default function Countries() {
             <TableBody>
               {currencies.map(cur => (
                 <TableRow key={cur.id}>
-                  <TableCell className="font-medium">{cur.name}</TableCell>
+                  <TableCell className="font-medium">{displayCurrencyName(cur)}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{cur.iso_symbol}</Badge>
                   </TableCell>
@@ -371,7 +380,7 @@ export default function Countries() {
                 countries.map(country => (
                   <TableRow key={country.id}>
                     <TableCell className="font-medium">{country.name}</TableCell>
-                    <TableCell>{country.currency?.name || '—'}</TableCell>
+                    <TableCell>{displayCurrencyName(country.currency)}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{country.currency?.iso_symbol || '—'}</Badge>
                     </TableCell>

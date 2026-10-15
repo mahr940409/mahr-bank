@@ -8,16 +8,29 @@ let exchangeRatesCache: Record<string, number> = {
   KYD: 1,
 };
 
+function calculateCurrencyRate(currency: {
+  pdh_reserves?: number;
+  printed_amount?: number;
+  burned_amount?: number;
+  initial_units_per_pdh?: number;
+  exchange_rate_to_pdh?: number;
+}): number {
+  const circulation = Math.max(0, Number(currency.printed_amount || 0) - Number(currency.burned_amount || 0));
+  if (circulation > 0) return Math.max(0, Number(currency.pdh_reserves || 0)) / circulation;
+  const initial = Number(currency.initial_units_per_pdh || 0);
+  return initial > 0 ? 1 / initial : Number(currency.exchange_rate_to_pdh || 1);
+}
+
 // Load exchange rates from DB
 export async function loadExchangeRates(): Promise<Record<string, number>> {
   const { data, error } = await supabase
     .from('currencies')
-    .select('iso_symbol, exchange_rate_to_pdh');
+    .select('*');
   
   if (!error && data) {
     const rates: Record<string, number> = {};
     (data as any[]).forEach((cur) => {
-      rates[cur.iso_symbol] = Number(cur.exchange_rate_to_pdh);
+      rates[cur.iso_symbol] = calculateCurrencyRate(cur);
     });
     exchangeRatesCache = rates;
   }

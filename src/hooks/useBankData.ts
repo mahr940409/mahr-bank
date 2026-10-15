@@ -6,6 +6,8 @@ import { calculateWeeklyPayment, getInterestRateByAccountType, generatePaymentSc
 import { loadExchangeRates, convertToPDH, convertCurrency } from '@/lib/currencyUtils';
 import { useBankSettings } from '@/hooks/useBankSettings';
 import { toast } from './use-toast';
+import { mahrToNationalTransfer } from '@/lib/nationalBankOperations';
+import { computeExchangeRate } from '@/hooks/useCountriesData';
 
 export function useBankData() {
   const [bankMainAccount, setBankMainAccount] = useState<BankMainAccount>({
@@ -355,6 +357,23 @@ export function useBankData() {
     toast({ title: 'Transferencia realizada', description: `Transferencia de ${amount.toFixed(2)} ${currency} realizada exitosamente.` });
   };
 
+  const handleTransferToNational = async (fromMahrAccountId: string, toNationalAccountId: string, amountMahr: number) => {
+    const { data: target } = await supabase.from('national_bank_accounts').select('*').eq('id', toNationalAccountId).single();
+    if (!target) throw new Error('Cuenta nacional inexistente.');
+    const { data: bank } = await supabase.from('national_banks').select('id, country_id').eq('id', target.national_bank_id).single();
+    if (!bank) throw new Error('Banco Nacional inexistente.');
+    const { data: country } = await supabase.from('countries').select('currency_id').eq('id', bank.country_id).single();
+    const { data: currency } = country ? await supabase.from('currencies').select('*').eq('id', country.currency_id).single() : { data: null } as any;
+    if (!currency) throw new Error('Moneda nacional inexistente.');
+    const { data: bankAccounts } = await supabase.from('national_bank_accounts').select('balance_real').eq('national_bank_id', bank.id);
+    const committed = (bankAccounts || []).reduce((sum: number, account: any) => sum + Number(account.balance_real || 0), 0);
+    const rate = computeExchangeRate(currency as any);
+    const availableReal = Math.max(0, Number(currency.printed_amount || 0) - Number(currency.burned_amount || 0) - committed);
+    await mahrToNationalTransfer({ bankId: bank.id, fromMahrAccountId, toNationalAccountId, amountMahr, currencyLocalIso: currency.iso_symbol, rateToPdh: rate, availableReal, moneySource: 'printed' });
+    await loadAllData();
+    toast({ title: 'Transferencia realizada', description: `Fondos enviados a ${currency.iso_symbol}.` });
+  };
+
   // Request loan - amount is in account's currency
   const requestLoan = async (accountId: string, amount: number, termWeeks: number) => {
     const account = accounts.find((acc) => acc.id === accountId);
@@ -701,6 +720,7 @@ export function useBankData() {
     handleDeposit,
     handleWithdrawal,
     handleTransfer,
+    handleTransferToNational,
     requestLoan,
     payLoanInstallment,
     payLoanInFull,

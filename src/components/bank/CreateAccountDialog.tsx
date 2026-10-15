@@ -57,6 +57,7 @@ export function CreateAccountDialog({ open, onOpenChange, onCreateAccount }: Cre
     e.preventDefault();
     
     if (!userName.trim() || !selectedCountryId) return;
+    const isMahrAccount = selectedCountryId === 'mahr-bank';
     
     const accountNumber = `ACC-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
     const monthlyFee = accountType === 'business' ? 50 : 20;
@@ -67,9 +68,9 @@ export function CreateAccountDialog({ open, onOpenChange, onCreateAccount }: Cre
       accountNumber,
       type: accountType,
       balance: 0,
-      currency: selectedCountry?.currencySymbol || 'PDH',
-      countryId: selectedCountryId,
-      countryName: selectedCountry?.name,
+      currency: isMahrAccount ? 'PDH' : (selectedCountry?.currencySymbol || 'PDH'),
+      countryId: isMahrAccount ? undefined : selectedCountryId,
+      countryName: isMahrAccount ? 'MAHR Bank' : selectedCountry?.name,
       monthlyFee,
     });
     
@@ -101,12 +102,13 @@ export function CreateAccountDialog({ open, onOpenChange, onCreateAccount }: Cre
               />
             </div>
             <div className="grid gap-2">
-              <Label>País</Label>
+              <Label>País o banco</Label>
               <Select value={selectedCountryId} onValueChange={setSelectedCountryId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar país" />
+                  <SelectValue placeholder="Seleccionar país o MAHR Bank" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[200px]">
+                  <SelectItem value="mahr-bank">MAHR Bank (Pepita de Hierro · PDH)</SelectItem>
                   {countries.map(c => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.name} ({c.currencySymbol})

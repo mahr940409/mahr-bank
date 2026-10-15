@@ -41,7 +41,7 @@ export function BackingTable({ lines, title = 'Respaldo', description }: { lines
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
-          {description ?? 'Valor actualizado en PDH según el valor de hoy de cada moneda. Solo el PDH tiene valor fijo.'}
+          {description ?? 'Valor actualizado en Pepita de Hierro (PDH) según el valor de hoy de cada moneda. Solo la Pepita de Hierro tiene valor fijo.'}
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">

@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { adjustBacking, requireBackingFor, getRateToPdh, BackingLine, backingTotals } from '@/lib/backingOperations';
+import { computeExchangeRate } from '@/hooks/useCountriesData';
 
 // ---------- Types ----------
 export interface NationalBank {
@@ -152,6 +153,28 @@ export async function deleteNationalBank(bankId: string): Promise<void> {
 export async function setBankStatus(bankId: string, status: string): Promise<void> {
   const { error } = await supabase.from('national_banks').update({ status } as any).eq('id', bankId);
   if (error) throw error;
+}
+
+async function adjustIssuanceReserve(bankId: string, delta: number): Promise<void> {
+  const bank = await getBank(bankId);
+  const { data: country } = await supabase.from('countries').select('currency_id').eq('id', bank.country_id).maybeSingle();
+  if (!country?.currency_id) throw new Error('El banco no tiene una moneda asociada.');
+  const { data: currency, error } = await supabase.from('currencies').select('*').eq('id', country.currency_id).single();
+  if (error || !currency) throw error || new Error('Moneda no encontrada.');
+  const reserves = Math.max(0, Number((currency as any).pdh_reserves) + delta);
+  const rate = computeExchangeRate({ ...currency as any, pdh_reserves: reserves });
+  const { error: updateError } = await supabase.from('currencies').update({ pdh_reserves: reserves, exchange_rate_to_pdh: rate } as any).eq('id', country.currency_id);
+  if (updateError) throw updateError;
+}
+
+export async function addIssuanceReserve(bankId: string, amount: number): Promise<void> {
+  if (amount <= 0) throw new Error('El monto debe ser mayor que cero.');
+  await adjustIssuanceReserve(bankId, amount);
+}
+
+export async function withdrawIssuanceReserve(bankId: string, amount: number): Promise<void> {
+  if (amount <= 0) throw new Error('El monto debe ser mayor que cero.');
+  await adjustIssuanceReserve(bankId, -amount);
 }
 
 // Accounts
