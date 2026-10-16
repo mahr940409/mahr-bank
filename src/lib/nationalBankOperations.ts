@@ -568,6 +568,15 @@ export async function intlTransfer(args: {
   if (amountLocalFrom <= 0) throw new Error('Monto inválido.');
   if (fromBankId === toBankId) throw new Error('Bancos de origen y destino iguales.');
 
+  const { error: atomicError } = await supabase.rpc('transfer_national_international' as any, {
+    p_from_bank_id: fromBankId, p_from_account_id: fromAccountId,
+    p_to_bank_id: toBankId, p_to_account_id: toAccountId,
+    p_amount: amountLocalFrom, p_backing_currency: backingCurrency,
+    p_receiver_symbolic: receiverMoneySource === 'symbolic',
+  } as any);
+  if (!atomicError) return;
+  if (!/transfer_national_international|function|schema cache/i.test(atomicError.message || '')) throw atomicError;
+
   // La interfaz puede estar desactualizada. La conversión financiera siempre
   // usa las tasas actuales almacenadas en la base de datos.
   const authoritativeFromRate = await getRateToPdh(fromCurrencyIso);

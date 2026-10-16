@@ -147,6 +147,11 @@ export default function AccountDetail() {
                 <span className="text-xl ml-2 text-muted-foreground">{account.currency}</span>
               </div>
             </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3 text-sm">
+              <div className="rounded-md bg-muted/40 p-3"><p className="text-muted-foreground">Saldo real</p><p className="font-semibold">{formatNumber(account.balanceReal ?? account.balance)} {account.currency}</p></div>
+              <div className="rounded-md bg-muted/40 p-3"><p className="text-muted-foreground">Saldo simbólico</p><p className="font-semibold">{formatNumber(account.balanceSymbolic ?? 0)} {account.currency}</p></div>
+              <div className="rounded-md bg-muted/40 p-3"><p className="text-muted-foreground">Saldo congelado</p><p className="font-semibold">{formatNumber(account.balanceFrozen ?? 0)} {account.currency}</p></div>
+            </div>
           </CardContent>
         </Card>
       </div>

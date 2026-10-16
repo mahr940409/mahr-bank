@@ -83,6 +83,26 @@ export function OperationsDialog({
   const selectedWithdrawalAccount = accounts.find(a => a.id === withdrawalAccount);
   const selectedTransferFromAccount = accounts.find(a => a.id === transferFrom);
   const selectedTransferToAccount = accounts.find(a => a.id === transferTo);
+  const mahrAccount = accounts.find(a => a.id === 'bank-main');
+
+  const withdrawalPayout = (() => {
+    if (!selectedWithdrawalAccount || !withdrawalAmount) return null;
+    const requestedPdh = convertToPDH(Number(withdrawalAmount) || 0, withdrawalCurrency);
+    if (requestedPdh <= 0) return null;
+    // MAHR puede convertir sus recursos físicos entre BDH, LDH y PDH. Por
+    // eso el saldo total en PDH equivalentes es la fuente de disponibilidad,
+    // aunque todavía no exista un inventario separado por unidad física.
+    const availablePdh = Number((mahrAccount as any)?.balance || 0);
+    let remaining = requestedPdh;
+    const bdh = Math.min(Math.floor(remaining / 81), Math.floor(availablePdh / 81));
+    remaining -= bdh * 81;
+    const remainingAfterBdh = Math.max(0, availablePdh - bdh * 81);
+    const ldh = Math.min(Math.floor(remaining / 9), Math.floor(remainingAfterBdh / 9));
+    remaining -= ldh * 9;
+    const pdh = Math.ceil(remaining - 1e-9);
+    const deliveredPdh = bdh * 81 + ldh * 9 + pdh;
+    return { requestedPdh, rate: requestedPdh / (Number(withdrawalAmount) || 1), bdh, ldh, pdh, deliveredPdh, shortfall: Math.max(0, requestedPdh - deliveredPdh) };
+  })();
 
   useEffect(() => {
     if (selectedDepositAccount?.currency) setDepositCurrency(selectedDepositAccount.currency);
@@ -286,6 +306,7 @@ export function OperationsDialog({
                       <span className="text-muted-foreground">Equivalente en PDH:</span>
                       <span className="font-medium">{formatNumber(convertToPDH(maxWithdrawable, selectedWithdrawalAccount.currency))} PDH</span>
                     </div>
+                    {withdrawalPayout && <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground">Tasa utilizada:</span><span className="font-medium">1 {withdrawalCurrency} = {formatNumber(withdrawalPayout.rate)} PDH</span></div>}
                     <Button
                       type="button"
                       variant="outline"
@@ -300,6 +321,16 @@ export function OperationsDialog({
                   </div>
                 );
               })()}
+              {withdrawalPayout && (
+                <div className="rounded-md border border-primary/30 p-3 space-y-1 text-xs bg-primary/5">
+                  <p className="font-semibold">Recursos físicos a entregar por MAHR</p>
+                  <div className="flex justify-between"><span>BDH</span><span className="font-medium">{formatNumber(withdrawalPayout.bdh)}</span></div>
+                  <div className="flex justify-between"><span>LDH</span><span className="font-medium">{formatNumber(withdrawalPayout.ldh)}</span></div>
+                  <div className="flex justify-between"><span>PDH</span><span className="font-medium">{formatNumber(withdrawalPayout.pdh)}</span></div>
+                  <div className="flex justify-between border-t pt-1"><span className="font-semibold">Total equivalente</span><span className="font-bold">{formatNumber(withdrawalPayout.deliveredPdh)} PDH</span></div>
+                  {withdrawalPayout.shortfall > 0 && <p className="text-destructive">Faltan {formatNumber(withdrawalPayout.shortfall)} PDH equivalentes disponibles.</p>}
+                </div>
+              )}
               <Button type="submit" className="w-full">Realizar Retiro</Button>
             </form>
           </TabsContent>

@@ -39,6 +39,8 @@ export default function Calculator() {
     const toRate = rates[to] ?? 1;
     return from === to ? parsed : (parsed * fromRate) / toRate;
   }, [parsed, from, to, rates]);
+  const rate = (rates[from] ?? 1) / (rates[to] ?? 1);
+  const formatRate = (value: number) => value.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 8 });
 
   const CurSelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
     <Select value={value} onValueChange={onChange}>
@@ -68,7 +70,7 @@ export default function Calculator() {
           <div className="rounded-md border bg-muted/40 p-4">
             <div className="text-xs uppercase tracking-widest text-muted-foreground">Resultado</div>
             <div className="font-mono text-2xl font-bold break-all">{formatNumber(result)} {to}</div>
-            <div className="text-xs text-muted-foreground mt-2">1 {from} = {formatNumber((rates[from] ?? 1) / (rates[to] ?? 1))} {to}</div>
+            <div className="text-xs text-muted-foreground mt-2">1 {from} = {formatRate(rate)} {to}</div>
           </div>
         </CardContent>
       </Card>

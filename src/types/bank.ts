@@ -17,6 +17,11 @@ export interface Account {
   accountNumber: string;
   type: AccountType;
   balance: number;
+  balanceReal?: number;
+  balanceSymbolic?: number;
+  balanceFrozen?: number;
+  backingCurrency?: string;
+  backingAmount?: number;
   currency: string;
   countryId?: string;
   countryName?: string;
@@ -43,6 +48,8 @@ export interface BankMainAccount {
   id: string;
   accountNumber: string;
   balance: number; // Always in PDH
+  balanceBdh?: number;
+  balanceLdh?: number;
 }
 
 export interface Loan {

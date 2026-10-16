@@ -36,6 +36,8 @@ export function useBankData() {
         id: data.id,
         accountNumber: data.account_number,
         balance: Number(data.balance_pdh),
+        balanceBdh: Number((data as any).balance_bdh || 0),
+        balanceLdh: Number((data as any).balance_ldh || 0),
       });
     }
   };
@@ -63,6 +65,11 @@ export function useBankData() {
         accountNumber: acc.account_number,
         type: acc.account_type as 'personal' | 'business',
         balance: Number(acc.balance_pdh),
+        balanceReal: Number(acc.balance_real ?? acc.balance_pdh ?? 0),
+        balanceSymbolic: Number(acc.balance_symbolic ?? 0),
+        balanceFrozen: Number(acc.balance_frozen ?? 0),
+        backingCurrency: acc.backing_currency || undefined,
+        backingAmount: Number(acc.backing_amount ?? 0),
         currency: acc.currency || 'PDH',
         countryId: acc.country_id || undefined,
         countryName: acc.country_id ? countriesMap[acc.country_id] : undefined,
@@ -185,6 +192,10 @@ export function useBankData() {
       account_number: newAccount.accountNumber,
       account_type: newAccount.type,
       balance_pdh: newAccount.balance,
+      balance_real: newAccount.balance,
+      balance_symbolic: 0,
+      balance_frozen: 0,
+      backing_amount: 0,
       balance_bdh: 0,
       balance_ldh: 0,
       monthly_fee: newAccount.monthlyFee,
@@ -207,11 +218,27 @@ export function useBankData() {
     if (!account) return;
     
     const result = processDeposit(account, amount, currency, bankMainAccount);
+    const netDelta = result.updatedAccount.balance - account.balance;
+    if (accountId !== 'bank-main') {
+      const { error: atomicError } = await supabase.rpc('deposit_mahr_account' as any, {
+        p_account_id: accountId, p_net_amount: netDelta,
+        p_commission_pdh: result.updatedBankAccount.balance - bankMainAccount.balance,
+        p_amount: result.transaction.amount, p_currency: result.transaction.currency,
+        p_commission: result.transaction.commission || 0, p_description: result.transaction.description,
+      } as any);
+      if (atomicError) { toast({ title: 'Error', description: atomicError.message, variant: 'destructive' }); return; }
+      await loadAllData();
+      toast({ title: 'Depósito realizado', description: `Depósito de ${amount.toFixed(2)} ${currency} realizado exitosamente.` });
+      return;
+    }
     
     // Update account balance (stored in balance_pdh column, but actually in account's currency)
     const { error: accountError } = await supabase
       .from('accounts')
-      .update({ balance_pdh: result.updatedAccount.balance } as any)
+      .update({
+        balance_pdh: result.updatedAccount.balance,
+        balance_real: Number(account.balanceReal ?? account.balance) + (result.updatedAccount.balance - account.balance),
+      } as any)
       .eq('id', accountId);
     
     if (accountError) {
@@ -262,11 +289,27 @@ export function useBankData() {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
       return;
     }
+    if (accountId !== 'bank-main') {
+      const { error: atomicError } = await supabase.rpc('withdraw_mahr_account' as any, {
+        p_account_id: accountId,
+        p_amount_account: account.balance - result.updatedAccount.balance,
+        p_amount: result.transaction.amount,
+        p_currency: result.transaction.currency,
+        p_description: result.transaction.description,
+      } as any);
+      if (atomicError) { toast({ title: 'Error', description: atomicError.message, variant: 'destructive' }); return; }
+      await loadAllData();
+      toast({ title: 'Retiro realizado', description: `Retiro de ${amount.toFixed(2)} ${currency} realizado exitosamente.` });
+      return;
+    }
     
     const tableName = accountId === 'bank-main' ? 'bank_main_account' : 'accounts';
     const { error } = await supabase
       .from(tableName as any)
-      .update({ balance_pdh: result.updatedAccount.balance } as any)
+      .update({
+        balance_pdh: result.updatedAccount.balance,
+        balance_real: accountId === 'bank-main' ? undefined : Number(account.balanceReal ?? account.balance) - (account.balance - result.updatedAccount.balance),
+      } as any)
       .eq('id', accountId);
     
     if (error) {
@@ -308,12 +351,33 @@ export function useBankData() {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
       return;
     }
+
+    if (fromAccountId !== 'bank-main' && toAccountId !== 'bank-main' && fromAccount.currency === toAccount.currency) {
+      const { error: atomicError } = await supabase.rpc('transfer_mahr_accounts' as any, {
+        p_from_account_id: fromAccountId,
+        p_to_account_id: toAccountId,
+        p_amount: amount,
+        p_commission: result.transaction.commission || 0,
+        p_currency: currency,
+        p_description: result.transaction.description,
+      } as any);
+      if (atomicError) {
+        toast({ title: 'Error', description: atomicError.message, variant: 'destructive' });
+        return;
+      }
+      await loadAllData();
+      toast({ title: 'Transferencia realizada', description: `Transferencia de ${amount.toFixed(2)} ${currency} realizada exitosamente.` });
+      return;
+    }
     
     // Update from account
     const fromTable = fromAccountId === 'bank-main' ? 'bank_main_account' : 'accounts';
     await supabase
       .from(fromTable as any)
-      .update({ balance_pdh: result.updatedFromAccount.balance } as any)
+      .update({
+        balance_pdh: result.updatedFromAccount.balance,
+        balance_real: fromAccountId === 'bank-main' ? undefined : Number(fromAccount.balanceReal ?? fromAccount.balance) - (fromAccount.balance - result.updatedFromAccount.balance),
+      } as any)
       .eq('id', fromAccountId);
     
     // Update to account
@@ -327,7 +391,10 @@ export function useBankData() {
     } else {
       await supabase
         .from('accounts' as any)
-        .update({ balance_pdh: result.updatedToAccount.balance } as any)
+        .update({
+          balance_pdh: result.updatedToAccount.balance,
+          balance_real: toAccountId === 'bank-main' ? undefined : Number(toAccount.balanceReal ?? toAccount.balance) + (result.updatedToAccount.balance - toAccount.balance),
+        } as any)
         .eq('id', toAccountId);
       
       if (result.updatedBankAccount.balance !== bankMainAccount.balance) {
