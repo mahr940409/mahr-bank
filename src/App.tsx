@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { MainLayout } from "./components/layout/MainLayout";
-import { PasswordGate } from "./components/auth/PasswordGate";
+import { AuthGate } from "./components/auth/AuthGate";
 import Dashboard from "./pages/Dashboard";
 import Accounts from "./pages/Accounts";
 import AccountDetail from "./pages/AccountDetail";
@@ -30,7 +30,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <PasswordGate>
+      <AuthGate>
         <BrowserRouter>
           <Routes>
             <Route element={<MainLayout />}>
@@ -54,7 +54,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
-      </PasswordGate>
+      </AuthGate>
     </TooltipProvider>
   </QueryClientProvider>
 );

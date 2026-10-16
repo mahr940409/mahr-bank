@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const routeTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -32,9 +33,8 @@ export function MainLayout() {
   const { pathname } = useLocation();
   const title = getTitle(pathname);
 
-  const handleLogout = () => {
-    sessionStorage.removeItem("mahr_auth");
-    window.location.reload();
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
   return (

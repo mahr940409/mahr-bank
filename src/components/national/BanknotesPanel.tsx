@@ -8,7 +8,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/hooks/use-toast';
 import { Plus, Printer, Trash2 } from 'lucide-react';
 import { formatNumber } from '@/lib/currencyUtils';
-import { computeExchangeRate } from '@/hooks/useCountriesData';
 
 export const NOTES_PER_BOX = 432;
 export const NOTES_PER_BUNDLE = 16;
@@ -57,25 +56,8 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
     setBusy(true);
     try {
       const amount = d.value * NOTES_PER_BOX * n;
-      const { data: cur, error: e1 } = await supabase.from('currencies').select('*').eq('id', currencyId).single();
-      if (e1 || !cur) throw e1 || new Error('Moneda no encontrada');
-      const c: any = cur;
-      const issuanceBacking = Number(c.pdh_reserves) || 0;
-      if (issuanceBacking <= 0) {
-        throw new Error('No se pueden imprimir billetes sin respaldo de emisión en Pepita de Hierro (PDH). Agrega respaldo primero.');
-      }
-      const next = {
-        pdh_reserves: issuanceBacking,
-        printed_amount: (Number(c.printed_amount) || 0) + amount,
-        burned_amount: Number(c.burned_amount) || 0,
-        initial_units_per_pdh: Number(c.initial_units_per_pdh) || 1,
-      };
-      const update: any = { printed_amount: next.printed_amount };
-      if (!c.is_fixed_rate) update.exchange_rate_to_pdh = computeExchangeRate(next);
-      const { error: e2 } = await supabase.from('currencies').update(update).eq('id', currencyId);
-      if (e2) throw e2;
-      const { error: e3 } = await supabase.from('banknote_denominations' as any).update({ boxes_printed: d.boxes_printed + n } as any).eq('id', d.id);
-      if (e3) throw e3;
+      const { error } = await supabase.rpc('print_banknote_boxes' as any, { p_bank_id: bank.id, p_denomination_id: d.id, p_boxes: n } as any);
+      if (error) throw error;
       toast({ title: 'Impresión realizada', description: `${n} caja(s) × ${NOTES_PER_BOX} billetes de ${formatNumber(d.value)} = ${formatNumber(amount)} ${iso}` });
       setBoxes((b) => ({ ...b, [d.id]: 0 }));
       await load();
@@ -92,11 +74,8 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
     const available = d.boxes_printed * BUNDLES_PER_BOX - d.bundles_withdrawn;
     if (count <= 0 || count > available) return toast({ title: 'Error', description: `Fajos disponibles: ${available}.`, variant: 'destructive' });
     const amount = count * NOTES_PER_BUNDLE * d.value;
-    const { data: treasury } = await supabase.from('national_bank_accounts').select('id, balance_real').eq('national_bank_id', bank.id).eq('account_type', 'bank_treasury').maybeSingle();
-    if (!treasury || Number(treasury.balance_real) < amount) return toast({ title: 'Fondos insuficientes', description: 'La cuenta propia no tiene efectivo suficiente.', variant: 'destructive' });
-    const { error } = await supabase.from('banknote_denominations' as any).update({ bundles_withdrawn: d.bundles_withdrawn + count } as any).eq('id', d.id);
+    const { error } = await supabase.rpc('withdraw_banknote_bundles' as any, { p_bank_id: bank.id, p_denomination_id: d.id, p_bundles: count } as any);
     if (error) return toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    await supabase.from('national_bank_accounts').update({ balance_real: Number(treasury.balance_real) - amount } as any).eq('id', treasury.id);
     toast({ title: 'Retiro de efectivo realizado', description: `${count} fajos × ${NOTES_PER_BUNDLE} billetes de ${formatNumber(d.value)} = ${formatNumber(amount)} ${iso}` });
     setBundles((b) => ({ ...b, [d.id]: 0 }));
     await load();

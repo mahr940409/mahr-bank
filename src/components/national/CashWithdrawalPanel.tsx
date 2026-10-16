@@ -25,11 +25,8 @@ export function CashWithdrawalPanel({ bank, onChanged }: { bank: any; onChanged:
     const available = row.boxes_printed * BUNDLES_PER_BOX - row.bundles_withdrawn;
     const amount = count * NOTES_PER_BUNDLE * row.value;
     if (count <= 0 || count > available) return toast({ title: 'Fajos inválidos', description: `Disponibles: ${available}.`, variant: 'destructive' });
-    const { data: treasury } = await supabase.from('national_bank_accounts').select('id, balance_real').eq('national_bank_id', bank.id).eq('account_type', 'bank_treasury').maybeSingle();
-    if (!treasury || Number(treasury.balance_real) < amount) return toast({ title: 'Fondos insuficientes', description: 'La cuenta propia no tiene efectivo suficiente.', variant: 'destructive' });
-    const { error } = await supabase.from('banknote_denominations' as any).update({ bundles_withdrawn: row.bundles_withdrawn + count } as any).eq('id', row.id);
+    const { error } = await supabase.rpc('withdraw_banknote_bundles' as any, { p_bank_id: bank.id, p_denomination_id: row.id, p_bundles: count } as any);
     if (error) return toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    await supabase.from('national_bank_accounts').update({ balance_real: Number(treasury.balance_real) - amount } as any).eq('id', treasury.id);
     toast({ title: 'Efectivo retirado', description: `${count} fajos × ${NOTES_PER_BUNDLE} billetes de ${formatNumber(row.value)} = ${formatNumber(amount)} ${bank.metrics.currency_iso}` });
     setBundles((current) => ({ ...current, [row.id]: 0 }));
     await load();

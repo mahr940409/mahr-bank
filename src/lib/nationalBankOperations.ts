@@ -363,6 +363,18 @@ export async function nationalTransfer(args: {
   if (amount <= 0) throw new Error('Monto inválido.');
   if (fromAccountId === toAccountId) throw new Error('Cuentas iguales.');
 
+  const { error: atomicError } = await supabase.rpc('transfer_national_accounts' as any, {
+    p_bank_id: bankId,
+    p_from_account_id: fromAccountId,
+    p_to_account_id: toAccountId,
+    p_amount: amount,
+    p_currency_iso: currencyIso,
+  } as any);
+  if (!atomicError) return;
+  // Mientras la migración no se haya ejecutado, conservar el flujo anterior
+  // para no interrumpir la aplicación durante la transición.
+  if (!/transfer_national_accounts|function|schema cache/i.test(atomicError.message || '')) throw atomicError;
+
   const { data: fromAcc } = await supabase
     .from('national_bank_accounts').select('*').eq('id', fromAccountId).maybeSingle();
   const { data: toAcc } = await supabase
@@ -422,7 +434,11 @@ export async function nationalDeposit(args: {
       throw new Error(`Dinero impreso disponible insuficiente. Disponible: ${availableReal.toFixed(2)} ${currencyIso}. Cambia a "Dinero simbólico" o reduce el monto.`);
     }
     realPart = amount;
-    await adjustTreasury(bankId, -realPart);
+    const { error: atomicError } = await supabase.rpc('deposit_national_physical' as any, {
+      p_bank_id: bankId, p_account_id: toAccountId, p_amount: amount, p_currency_iso: currencyIso,
+    } as any);
+    if (atomicError) throw atomicError;
+    return;
   } else {
     if (!backingCurrency) throw new Error('Selecciona la moneda de respaldo para dinero simbólico.');
     const ownIso = await getBankCurrencyIso(bankId);
@@ -432,12 +448,12 @@ export async function nationalDeposit(args: {
     if (toAcc.backing_currency && num(toAcc.backing_amount) > 0 && toAcc.backing_currency !== backingCurrency) {
       throw new Error(`Esta cuenta ya tiene simbólico respaldado en ${toAcc.backing_currency}. Usa esa misma moneda.`);
     }
-    const equivPdh = localToPdh(amount, rateToPdh);
-    const { units } = await requireBackingFor('national', bankId, backingCurrency, equivPdh);
-    await adjustBacking('national', bankId, backingCurrency, 0, units);
-    symbolicPart = amount;
-    frozenAdd = units;
-    backingCurFinal = backingCurrency;
+    const { error: atomicError } = await supabase.rpc('deposit_national_symbolic' as any, {
+      p_bank_id: bankId, p_account_id: toAccountId, p_amount: amount,
+      p_currency_iso: currencyIso, p_backing_currency: backingCurrency,
+    } as any);
+    if (atomicError) throw atomicError;
+    return;
   }
 
   await supabase.from('national_bank_accounts').update({
@@ -480,6 +496,14 @@ export async function nationalWithdraw(args: {
   const total = num(acc.balance_real) + num(acc.balance_symbolic);
   if (total < amount) throw new Error('Saldo total insuficiente.');
 
+  if (num(acc.balance_symbolic) >= amount) {
+    const { error: atomicError } = await supabase.rpc('withdraw_national_with_substitution' as any, {
+      p_bank_id: bankId, p_account_id: fromAccountId, p_amount: amount, p_currency_iso: currencyIso,
+    } as any);
+    if (atomicError) throw atomicError;
+    return;
+  }
+
   // Burn symbolic first (libera respaldo congelado)
   let remaining = amount;
   let releaseBacking = 0;
@@ -487,7 +511,12 @@ export async function nationalWithdraw(args: {
   remaining -= symPart;
   let realPart = remaining;
 
-  await adjustTreasury(bankId, realPart);
+  if (realPart > 0) {
+    const { error: atomicError } = await supabase.rpc('withdraw_national_physical' as any, {
+      p_bank_id: bankId, p_account_id: fromAccountId, p_amount: realPart, p_currency_iso: currencyIso,
+    } as any);
+    if (atomicError) throw atomicError;
+  }
 
   if (symPart > 0 && acc.backing_currency) {
     const ratio = symPart / num(acc.balance_symbolic);
@@ -496,7 +525,6 @@ export async function nationalWithdraw(args: {
   }
 
   await supabase.from('national_bank_accounts').update({
-    balance_real: num(acc.balance_real) - realPart,
     balance_symbolic: num(acc.balance_symbolic) - symPart,
     backing_amount: Math.max(0, num(acc.backing_amount) - releaseBacking),
   } as any).eq('id', fromAccountId);
@@ -540,6 +568,11 @@ export async function intlTransfer(args: {
   if (amountLocalFrom <= 0) throw new Error('Monto inválido.');
   if (fromBankId === toBankId) throw new Error('Bancos de origen y destino iguales.');
 
+  // La interfaz puede estar desactualizada. La conversión financiera siempre
+  // usa las tasas actuales almacenadas en la base de datos.
+  const authoritativeFromRate = await getRateToPdh(fromCurrencyIso);
+  const authoritativeToRate = await getRateToPdh(toCurrencyIso);
+
   const { data: fromAcc } = await supabase
     .from('national_bank_accounts').select('*').eq('id', fromAccountId).maybeSingle();
   const { data: toAcc } = await supabase
@@ -552,7 +585,7 @@ export async function intlTransfer(args: {
   }
 
   // 2) Convert local -> PDH equivalent
-  const equivPdh = localToPdh(amountLocalFrom, fromRateToPdh);
+  const equivPdh = localToPdh(amountLocalFrom, authoritativeFromRate);
 
   // 3) MAHR verifies sender has enough backing (not frozen)
   const fromOwnIso = await getBankCurrencyIso(fromBankId);
@@ -561,7 +594,7 @@ export async function intlTransfer(args: {
   }
   const { units: backingUnits, rate: backingRate } = await requireBackingFor('national', fromBankId, backingCurrency, equivPdh);
   if (receiverMoneySource === 'printed') {
-    const amtTo = pdhToLocal(equivPdh, toRateToPdh);
+    const amtTo = pdhToLocal(equivPdh, authoritativeToRate);
     if (amtTo > toAvailableReal) {
       throw new Error(`Dinero impreso disponible en banco destino insuficiente (${toAvailableReal.toFixed(2)} ${toCurrencyIso}). Selecciona "Dinero simbólico".`);
     }
@@ -580,7 +613,7 @@ export async function intlTransfer(args: {
   await adjustBacking('national', toBankId, backingCurrency, backingUnits);
 
   // 6) Convert PDH equiv -> receiver local
-  const amountLocalTo = pdhToLocal(equivPdh, toRateToPdh);
+  const amountLocalTo = pdhToLocal(equivPdh, authoritativeToRate);
 
   // 7) Assign to receiver based on chosen money source
   let realPart = 0, symPart = 0, frozenAdd = 0;
@@ -591,7 +624,7 @@ export async function intlTransfer(args: {
     realPart = amountLocalTo;
   } else {
     symPart = amountLocalTo;
-    frozenAdd = localToPdh(symPart, toRateToPdh) / backingRate;
+    frozenAdd = localToPdh(symPart, authoritativeToRate) / backingRate;
     await adjustBacking('national', toBankId, backingCurrency, 0, frozenAdd);
   }
 
