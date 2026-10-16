@@ -17,15 +17,14 @@ WHERE NOT EXISTS (
 
 -- The treasury account starts with the issuer's available printed money.
 UPDATE public.national_bank_accounts treasury
-SET balance_real = GREATEST(0, COALESCE(c.printed_amount, 0) - COALESCE(committed.total_committed, 0))
+SET balance_real = GREATEST(0, COALESCE(c.printed_amount, 0) - COALESCE(withdrawn.total_withdrawn, 0))
 FROM public.national_banks nb
 JOIN public.countries co ON co.id = nb.country_id
 JOIN public.currencies c ON c.id = co.currency_id
 LEFT JOIN (
-  SELECT national_bank_id, SUM(COALESCE(balance_real, 0)) AS total_committed
-  FROM public.national_bank_accounts
-  WHERE account_type <> 'bank_treasury'
+  SELECT national_bank_id, SUM(COALESCE(value, 0) * 16 * COALESCE(bundles_withdrawn, 0)) AS total_withdrawn
+  FROM public.banknote_denominations
   GROUP BY national_bank_id
-) committed ON committed.national_bank_id = nb.id
+) withdrawn ON withdrawn.national_bank_id = nb.id
 WHERE treasury.national_bank_id = nb.id
   AND treasury.account_type = 'bank_treasury';

@@ -11,13 +11,16 @@ import { formatNumber } from '@/lib/currencyUtils';
 import { computeExchangeRate } from '@/hooks/useCountriesData';
 
 export const NOTES_PER_BOX = 432;
+export const NOTES_PER_BUNDLE = 16;
+export const BUNDLES_PER_BOX = NOTES_PER_BOX / NOTES_PER_BUNDLE;
 
-type Denom = { id: string; value: number; boxes_printed: number };
+type Denom = { id: string; value: number; boxes_printed: number; bundles_withdrawn: number };
 
 export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () => Promise<void> | void }) {
   const [denoms, setDenoms] = useState<Denom[]>([]);
   const [newValue, setNewValue] = useState<number>(0);
   const [boxes, setBoxes] = useState<Record<string, number>>({});
+  const [bundles, setBundles] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const iso = bank.metrics.currency_iso;
   const currencyId: string | undefined = bank.currency?.id ?? bank.country?.currency_id;
@@ -25,10 +28,10 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
   const load = async () => {
     const { data } = await supabase
       .from('banknote_denominations' as any)
-      .select('id, value, boxes_printed')
+      .select('id, value, boxes_printed, bundles_withdrawn')
       .eq('national_bank_id', bank.id)
       .order('value');
-    setDenoms(((data as any[]) || []).map((d) => ({ ...d, value: Number(d.value) })));
+    setDenoms(((data as any[]) || []).map((d) => ({ ...d, value: Number(d.value), bundles_withdrawn: Number(d.bundles_withdrawn || 0) })));
   };
   useEffect(() => { load(); }, [bank.id]);
 
@@ -84,6 +87,22 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
     }
   };
 
+  const withdrawBundles = async (d: Denom) => {
+    const count = Math.floor(bundles[d.id] || 0);
+    const available = d.boxes_printed * BUNDLES_PER_BOX - d.bundles_withdrawn;
+    if (count <= 0 || count > available) return toast({ title: 'Error', description: `Fajos disponibles: ${available}.`, variant: 'destructive' });
+    const amount = count * NOTES_PER_BUNDLE * d.value;
+    const { data: treasury } = await supabase.from('national_bank_accounts').select('id, balance_real').eq('national_bank_id', bank.id).eq('account_type', 'bank_treasury').maybeSingle();
+    if (!treasury || Number(treasury.balance_real) < amount) return toast({ title: 'Fondos insuficientes', description: 'La cuenta propia no tiene efectivo suficiente.', variant: 'destructive' });
+    const { error } = await supabase.from('banknote_denominations' as any).update({ bundles_withdrawn: d.bundles_withdrawn + count } as any).eq('id', d.id);
+    if (error) return toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    await supabase.from('national_bank_accounts').update({ balance_real: Number(treasury.balance_real) - amount } as any).eq('id', treasury.id);
+    toast({ title: 'Retiro de efectivo realizado', description: `${count} fajos × ${NOTES_PER_BUNDLE} billetes de ${formatNumber(d.value)} = ${formatNumber(amount)} ${iso}` });
+    setBundles((b) => ({ ...b, [d.id]: 0 }));
+    await load();
+    await onChanged();
+  };
+
   const totalPrinted = denoms.reduce((s, d) => s + d.value * NOTES_PER_BOX * d.boxes_printed, 0);
   const printAll = async () => {
     const pending = denoms.filter((d) => Math.floor(boxes[d.id] || 0) > 0);
@@ -131,6 +150,7 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
             <TableBody>
               {denoms.map((d) => {
                 const n = Math.floor(boxes[d.id] || 0);
+                const availableBundles = d.boxes_printed * BUNDLES_PER_BOX - d.bundles_withdrawn;
                 return (
                   <TableRow key={d.id}>
                     <TableCell className="font-medium">{formatNumber(d.value)} {iso}</TableCell>
@@ -148,6 +168,10 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
                     <TableCell className="text-right whitespace-nowrap">
                       <Button size="sm" disabled={busy || n <= 0} onClick={() => print(d)}><Printer className="h-4 w-4 mr-1" />Imprimir</Button>
                       <Button size="icon" variant="ghost" onClick={() => removeDenom(d)}><Trash2 className="h-4 w-4" /></Button>
+                    </TableCell>
+                    <TableCell className="min-w-[180px]">
+                      <NumberInput value={bundles[d.id] ? String(bundles[d.id]) : ""} onChange={(v) => setBundles((b) => ({ ...b, [d.id]: Number(v) || 0 }))} placeholder={`${availableBundles} disponibles`} />
+                      <Button size="sm" variant="outline" className="mt-1" onClick={() => withdrawBundles(d)}>Retirar fajos</Button>
                     </TableCell>
                   </TableRow>
                 );

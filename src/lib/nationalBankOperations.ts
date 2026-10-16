@@ -176,26 +176,37 @@ export async function setBankStatus(bankId: string, status: string): Promise<voi
   if (error) throw error;
 }
 
-async function adjustIssuanceReserve(bankId: string, delta: number): Promise<void> {
+async function adjustIssuanceReserve(bankId: string, delta: number, reserveCurrency = 'PDH'): Promise<void> {
   const bank = await getBank(bankId);
   const { data: country } = await supabase.from('countries').select('currency_id').eq('id', bank.country_id).maybeSingle();
   if (!country?.currency_id) throw new Error('El banco no tiene una moneda asociada.');
   const { data: currency, error } = await supabase.from('currencies').select('*').eq('id', country.currency_id).single();
   if (error || !currency) throw error || new Error('Moneda no encontrada.');
-  const reserves = Math.max(0, Number((currency as any).pdh_reserves) + delta);
+  const reserveRate = await getRateToPdh(reserveCurrency);
+  const deltaPdh = delta * reserveRate;
+  const reserves = Math.max(0, Number((currency as any).pdh_reserves) + deltaPdh);
   const rate = computeExchangeRate({ ...currency as any, pdh_reserves: reserves });
   const { error: updateError } = await supabase.from('currencies').update({ pdh_reserves: reserves, exchange_rate_to_pdh: rate } as any).eq('id', country.currency_id);
   if (updateError) throw updateError;
+  const { data: existingCustody } = await supabase.from('national_bank_custody_accounts' as any)
+    .select('amount').eq('national_bank_id', bankId).eq('custody_type', 'currency_backing').eq('currency_iso', reserveCurrency).maybeSingle();
+  const { error: custodyError } = await supabase.from('national_bank_custody_accounts' as any).upsert({
+    national_bank_id: bankId,
+    custody_type: 'currency_backing',
+    currency_iso: reserveCurrency,
+    amount: Math.max(0, Number((existingCustody as any)?.amount || 0) + delta),
+  }, { onConflict: 'national_bank_id,custody_type,currency_iso' });
+  if (custodyError) throw custodyError;
 }
 
-export async function addIssuanceReserve(bankId: string, amount: number): Promise<void> {
+export async function addIssuanceReserve(bankId: string, amount: number, currencyIso = 'PDH'): Promise<void> {
   if (amount <= 0) throw new Error('El monto debe ser mayor que cero.');
-  await adjustIssuanceReserve(bankId, amount);
+  await adjustIssuanceReserve(bankId, amount, currencyIso);
 }
 
-export async function withdrawIssuanceReserve(bankId: string, amount: number): Promise<void> {
+export async function withdrawIssuanceReserve(bankId: string, amount: number, currencyIso = 'PDH'): Promise<void> {
   if (amount <= 0) throw new Error('El monto debe ser mayor que cero.');
-  await adjustIssuanceReserve(bankId, -amount);
+  await adjustIssuanceReserve(bankId, -amount, currencyIso);
 }
 
 // Accounts
@@ -226,6 +237,28 @@ async function getBankMain() {
     .from('bank_main_account').select('*').eq('id', 'bank-main').maybeSingle();
   if (error || !data) throw new Error('Cuenta MAHR Bank no encontrada.');
   return data as any;
+}
+
+// Mantiene una custodia separada por moneda, incluyendo monedas creadas
+// después de la instalación inicial. La tabla bank_backings conserva el
+// saldo operativo y esta tabla conserva su clasificación de custodia.
+async function syncInternationalCustody(bankId: string, currencyIso: string): Promise<void> {
+  const { data: backing, error } = await supabase
+    .from('bank_backings' as any)
+    .select('amount, frozen')
+    .eq('bank_type', 'national')
+    .eq('bank_id', bankId)
+    .eq('currency_iso', currencyIso)
+    .maybeSingle();
+  if (error) throw error;
+  const { error: custodyError } = await supabase.from('national_bank_custody_accounts' as any).upsert({
+    national_bank_id: bankId,
+    custody_type: 'international_backing',
+    currency_iso: currencyIso,
+    amount: Math.max(0, Number((backing as any)?.amount || 0)),
+    frozen: Math.max(0, Number((backing as any)?.frozen || 0)),
+  }, { onConflict: 'national_bank_id,custody_type,currency_iso' });
+  if (custodyError) throw custodyError;
 }
 
 async function getBank(bankId: string): Promise<NationalBank> {
@@ -271,6 +304,7 @@ export async function addBacking(bankId: string, currency: string, amount: numbe
   const valuePdh = amount * rate;
   const bm = await getBankMain();
   await adjustBacking('national', bankId, currency, amount);
+  await syncInternationalCustody(bankId, currency);
   await supabase.from('bank_main_account')
     .update({ balance_pdh: num(bm.balance_pdh) + valuePdh } as any).eq('id', 'bank-main');
 
@@ -296,6 +330,7 @@ export async function withdrawBacking(bankId: string, currency: string, amount: 
   if (num(bm.balance_pdh) < valuePdh) throw new Error('MAHR Bank no tiene fondos suficientes para devolver el depósito.');
 
   await adjustBacking('national', bankId, currency, -amount);
+  await syncInternationalCustody(bankId, currency);
   await supabase.from('bank_main_account')
     .update({ balance_pdh: num(bm.balance_pdh) - valuePdh } as any).eq('id', 'bank-main');
 

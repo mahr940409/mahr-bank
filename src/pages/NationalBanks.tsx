@@ -17,6 +17,7 @@ import { Loader2, Plus, Trash2, Building2, ArrowLeft, ArrowDownUp, Send, Wallet,
 import { formatNumber } from '@/lib/currencyUtils';
 import { BondsPanel } from '@/components/national/BondsPanel';
 import { BanknotesPanel, NOTES_PER_BOX } from '@/components/national/BanknotesPanel';
+import { CashWithdrawalPanel } from '@/components/national/CashWithdrawalPanel';
 import { BackingCurrencySelect, BackingTable } from '@/components/bank/BackingUI';
 
 export default function NationalBanks() {
@@ -124,10 +125,12 @@ function BankDetail({
   bank, allBanks, txs, onBack, openAccount, setOpenAccount, createAccount,
   openBacking, setOpenBacking, openOp, setOpenOp, ops,
 }: any) {
+  const { currencies } = useCountriesData();
   const [accountSearch, setAccountSearch] = useState('');
   const [prefillAccountId, setPrefillAccountId] = useState<string | null>(null);
   const [pickerAccountId, setPickerAccountId] = useState<string | null>(null);
   const [issuanceAmount, setIssuanceAmount] = useState('');
+  const [issuanceCurrency, setIssuanceCurrency] = useState('PDH');
 
   const filteredAccounts = useMemo(() => {
     const q = accountSearch.trim().toLowerCase();
@@ -185,17 +188,18 @@ function BankDetail({
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <div className="w-full max-w-xs space-y-1">
-              <Label htmlFor="issuance-reserve-amount">Monto en PDH</Label>
+              <Label htmlFor="issuance-reserve-amount">Monto del respaldo</Label>
               <NumberInput id="issuance-reserve-amount" min={0} step="any" value={issuanceAmount} onChange={setIssuanceAmount} placeholder="Ej. 2" />
             </div>
+            <div className="w-full max-w-xs space-y-1"><Label>Moneda entregada</Label><Select value={issuanceCurrency} onValueChange={setIssuanceCurrency}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PDH">PDH · Pepita de Hierro</SelectItem>{currencies.filter((c: any) => c.iso_symbol !== 'PDH').map((c: any) => <SelectItem key={c.iso_symbol} value={c.iso_symbol}>{c.iso_symbol} · {c.name}</SelectItem>)}</SelectContent></Select></div>
             <Button onClick={async () => {
-              try { await ops.addIssuanceReserve(bank.id, parseAmount(issuanceAmount)); setIssuanceAmount(''); toast({ title: 'Respaldo de emisión agregado' }); }
+              try { await ops.addIssuanceReserve(bank.id, parseAmount(issuanceAmount), issuanceCurrency); setIssuanceAmount(''); toast({ title: 'Respaldo de emisión agregado' }); }
               catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
-            }}>Agregar PDH</Button>
+            }}>Agregar {issuanceCurrency}</Button>
             <Button variant="outline" onClick={async () => {
-              try { await ops.withdrawIssuanceReserve(bank.id, parseAmount(issuanceAmount)); setIssuanceAmount(''); toast({ title: 'Respaldo de emisión retirado' }); }
+              try { await ops.withdrawIssuanceReserve(bank.id, parseAmount(issuanceAmount), issuanceCurrency); setIssuanceAmount(''); toast({ title: 'Respaldo de emisión retirado' }); }
               catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
-            }}>Retirar PDH</Button>
+            }}>Retirar {issuanceCurrency}</Button>
           </div>
         </div>
         <p className="text-sm text-muted-foreground">Valor actual: 1 {bank.metrics.currency_iso} = {Number(bank.metrics.currency_rate_to_pdh).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} PDH</p>
@@ -222,8 +226,9 @@ function BankDetail({
             ['international_backing', 'Respaldo internacional en MAHR', 'Custodiado por MAHR para operaciones internacionales.'],
           ].map(([type, title, description]) => {
             const rows = (bank.custodyAccounts || []).filter((row: any) => row.custody_type === type);
+            const treasury = (bank.accounts || []).find((account: any) => account.account_type === 'bank_treasury');
             const total = type === 'own_resources' && rows.length === 0
-              ? bank.metrics.available_real
+              ? Number(treasury?.balance_real || 0)
               : rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
             const frozen = type === 'international_backing'
               ? bank.metrics.committed_real
@@ -246,12 +251,17 @@ function BankDetail({
           <TabsTrigger value="backing">Respaldo internacional</TabsTrigger>
           <TabsTrigger value="ops">Operaciones</TabsTrigger>
           <TabsTrigger value="notes">Billetes</TabsTrigger>
+          <TabsTrigger value="cash-withdrawal">Retiro de efectivo</TabsTrigger>
           <TabsTrigger value="bonds">Bonos</TabsTrigger>
           <TabsTrigger value="history">Historial</TabsTrigger>
         </TabsList>
 
         <TabsContent value="notes">
           <BanknotesPanel bank={bank} onChanged={ops.reload} />
+        </TabsContent>
+
+        <TabsContent value="cash-withdrawal">
+          <CashWithdrawalPanel bank={bank} onChanged={ops.reload} />
         </TabsContent>
 
         <TabsContent value="bonds">
