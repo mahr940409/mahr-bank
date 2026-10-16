@@ -454,23 +454,60 @@ function OpDialog({ mode, onClose, bank, pb, prefillAccId, nationalAccounts }: a
   const [moneySource, setMoneySource] = useState<'printed' | 'symbolic'>('printed');
   const [nationalAccId, setNationalAccId] = useState<string>('');
   const [backingCur, setBackingCur] = useState<string>('PDH');
+  const [depositCurrency, setDepositCurrency] = useState<string>(bank.metrics.currency_iso);
+  const [withdrawCurrency, setWithdrawCurrency] = useState<string>(bank.metrics.currency_iso);
+  const [currencyOptions, setCurrencyOptions] = useState<string[]>([]);
+  const [currencyRates, setCurrencyRates] = useState<Record<string, number>>({ PDH: 1, LDH: 9, BDH: 81 });
+  const [denoms, setDenoms] = useState<any[]>([]);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const denominationTotal = denoms.reduce((s, d) => s + Number(d.value) * Number(notes[d.id] || 0), 0);
+  const isResourceDeposit = ['PDH', 'LDH', 'BDH'].includes(depositCurrency);
+  const effectiveAmount = mode === 'deposit' && !isResourceDeposit ? denominationTotal : amtN;
+  const effectiveWithdrawalAmount = mode === 'withdraw'
+    ? amtN * (currencyRates[withdrawCurrency] || 1) / (bank.metrics.rate_to_pdh || 1)
+    : amtN;
+
+  useEffect(() => {
+    if (mode !== 'deposit' || moneySource !== 'printed') return;
+    supabase.from('banknote_denominations' as any)
+      .select('id, value, boxes_printed, bundles_withdrawn')
+      .eq('national_bank_id', bank.national_bank_id)
+      .order('value', { ascending: true })
+      .then(({ data }) => setDenoms((data as any[]) || []));
+  }, [mode, moneySource, bank.national_bank_id]);
 
   useMemo(() => { if (prefillAccId) setAccId(prefillAccId); }, [prefillAccId, mode]);
 
-  const reset = () => { setAccId(''); setToAccId(''); setAmt('0'); setMoneySource('printed'); setNationalAccId(''); setBackingCur('PDH'); };
+  useEffect(() => {
+    supabase.from('currencies').select('iso_symbol').then(({ data }) => {
+      const foreign = (data || []).map((c: any) => c.iso_symbol).filter(Boolean);
+      setCurrencyRates((data || []).reduce((out: Record<string, number>, c: any) => {
+        out[c.iso_symbol] = Number(c.exchange_rate_to_pdh) || 0;
+        return out;
+      }, { PDH: 1, LDH: 9, BDH: 81 }));
+      setCurrencyOptions(Array.from(new Set([bank.metrics.currency_iso, 'PDH', 'LDH', 'BDH', ...foreign])));
+    });
+  }, [bank.metrics.currency_iso]);
+
+  const reset = () => { setAccId(''); setToAccId(''); setAmt('0'); setMoneySource('printed'); setNationalAccId(''); setBackingCur('PDH'); setNotes({}); setDepositCurrency(bank.metrics.currency_iso); setWithdrawCurrency(bank.metrics.currency_iso); };
 
   const submit = async () => {
     try {
       if (mode === 'deposit') {
+        const denominationBreakdown = Object.fromEntries(
+          denoms.map((d) => [String(d.value), Math.max(0, Number(notes[d.id] || 0))]).filter(([, count]) => count > 0),
+        );
         await pb.deposit({
-          bankId: bank.id, toAccountId: accId, amount: amtN,
-          currencyIso: bank.metrics.currency_iso, rateToPdh: bank.metrics.rate_to_pdh,
-          moneySource, sourceNationalAccountId: nationalAccId || undefined, backingCurrency: backingCur,
+          bankId: bank.id, toAccountId: accId, amount: effectiveAmount,
+          currencyIso: depositCurrency, rateToPdh: bank.metrics.rate_to_pdh,
+          sourceRateToPdh: currencyRates[depositCurrency] || 0,
+          moneySource: 'printed', backingCurrency: backingCur,
+          denominationBreakdown,
         });
       } else if (mode === 'withdraw') {
         await pb.withdraw({
-          bankId: bank.id, fromAccountId: accId, amount: amtN,
-          currencyIso: bank.metrics.currency_iso, rateToPdh: bank.metrics.rate_to_pdh,
+          bankId: bank.id, fromAccountId: accId, amount: effectiveWithdrawalAmount,
+          currencyIso: withdrawCurrency, rateToPdh: bank.metrics.rate_to_pdh,
           destinationNationalAccountId: nationalAccId || undefined,
         });
       } else if (mode === 'transfer') {
@@ -508,32 +545,39 @@ function OpDialog({ mode, onClose, bank, pb, prefillAccId, nationalAccounts }: a
               </Select>
             </div>
           )}
-          <div><Label>Monto ({bank.metrics.currency_iso})</Label><NumberInput value={amt} onChange={setAmt} /></div>
+          {mode !== 'deposit' || isResourceDeposit ? (
+            <div><Label>Monto ({mode === 'deposit' ? depositCurrency : withdrawCurrency})</Label><NumberInput value={amt} onChange={setAmt} /></div>
+          ) : (
+            <div><Label>Monto calculado ({depositCurrency})</Label><Input value={formatNumber(denominationTotal)} readOnly /></div>
+          )}
+          {mode === 'withdraw' && (
+            <div><Label>Moneda solicitada</Label>
+              <Select value={withdrawCurrency} onValueChange={setWithdrawCurrency}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{currencyOptions.map((iso) => <SelectItem key={iso} value={iso}>{iso}</SelectItem>)}</SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Se descontarán {formatNumber(effectiveWithdrawalAmount)} {bank.metrics.currency_iso} de la cuenta.</p>
+            </div>
+          )}
 
           {mode === 'deposit' && (
             <>
-              <div><Label>Origen del dinero</Label>
-                <Select value={moneySource} onValueChange={(v: any) => setMoneySource(v)}>
+              <div><Label>Moneda depositada</Label>
+                <Select value={depositCurrency} onValueChange={(v) => { setDepositCurrency(v); setNotes({}); }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="printed">Dinero impreso (desde Banco Nacional)</SelectItem>
-                    <SelectItem value="symbolic">Dinero simbólico (respaldado por reserva)</SelectItem>
-                  </SelectContent>
+                  <SelectContent>{currencyOptions.map((iso) => <SelectItem key={iso} value={iso}>{iso}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              {moneySource === 'printed' ? (
-                <div><Label>Cuenta origen (Banco Nacional)</Label>
-                  <Select value={nationalAccId} onValueChange={setNationalAccId}>
-                    <SelectTrigger><SelectValue placeholder="Selecciona" /></SelectTrigger>
-                    <SelectContent className="max-h-[200px]">
-                      {nationalAccounts.map((a: any) => <SelectItem key={a.id} value={a.id}>{a.holder_name} · {formatNumber(Number(a.balance_real))} {bank.metrics.currency_iso}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <div><Label>Respaldo</Label>
-                  <BackingCurrencySelect value={backingCur} onChange={setBackingCur} exclude={bank.metrics?.currency_iso} />
-                  <p className="text-xs text-muted-foreground mt-1">Se consume el equivalente a {(amtN * bank.metrics.rate_to_pdh).toFixed(2)} PDH en {backingCur}, según su valor de hoy.</p>
+              {depositCurrency === bank.metrics.currency_iso && (
+                <div className="space-y-2 rounded-md border p-3">
+                  <Label>Billetes recibidos por denominación</Label>
+                  {denoms.length === 0 ? <p className="text-xs text-muted-foreground">Este Banco Nacional aún no tiene denominaciones.</p> : denoms.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between gap-3">
+                      <span className="text-sm">{formatNumber(Number(d.value))}</span>
+                      <Input type="number" min="0" step="1" value={notes[d.id] || ''} onChange={(e) => setNotes((n) => ({ ...n, [d.id]: e.target.value }))} placeholder="0" className="w-28" />
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">Total calculado: {formatNumber(denoms.reduce((s, d) => s + Number(d.value) * Number(notes[d.id] || 0), 0))} {bank.metrics.currency_iso}</p>
                 </div>
               )}
             </>
@@ -552,7 +596,7 @@ function OpDialog({ mode, onClose, bank, pb, prefillAccId, nationalAccounts }: a
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => { reset(); onClose(); }}>Cancelar</Button>
-          <Button onClick={submit} disabled={amtN <= 0 || !accId || (mode === 'transfer' && !toAccId)}>Confirmar</Button>
+          <Button onClick={submit} disabled={(mode === 'deposit' ? effectiveAmount <= 0 : effectiveWithdrawalAmount <= 0) || !accId || (mode === 'transfer' && !toAccId)}>Confirmar</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

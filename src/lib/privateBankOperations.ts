@@ -46,6 +46,7 @@ export interface PrivateTx {
   money_source: 'printed' | 'symbolic' | string;
   currency_iso: string | null;
   description: string | null;
+  denomination_breakdown?: Record<string, number>;
   created_at: string;
 }
 
@@ -98,18 +99,23 @@ async function freezeGuarantor(source: 'mahr' | 'national', sourceAccountId: str
       if (num((bm as any).balance_pdh) < GUARANTOR_KYD) {
         throw new Error(`La cuenta principal del MAHR Bank no tiene ${GUARANTOR_KYD.toLocaleString()} PDH para actuar como fiador.`);
       }
-      await supabase.from('bank_main_account')
+      const { error } = await supabase.from('bank_main_account')
         .update({ balance_pdh: num((bm as any).balance_pdh) - GUARANTOR_KYD } as any)
         .eq('id', 'bank-main');
+      if (error) throw error;
     } else {
       const { data: acc } = await supabase.from('accounts').select('*').eq('id', sourceAccountId).maybeSingle();
       if (!acc) throw new Error('Cuenta fiadora del MAHR Bank no encontrada.');
       if (num((acc as any).balance_pdh) < GUARANTOR_KYD) {
         throw new Error(`La cuenta fiadora necesita al menos ${GUARANTOR_KYD.toLocaleString()} PDH.`);
       }
-      await supabase.from('accounts')
-        .update({ balance_pdh: num((acc as any).balance_pdh) - GUARANTOR_KYD } as any)
+      const { error } = await supabase.from('accounts')
+        .update({
+          balance_pdh: num((acc as any).balance_pdh) - GUARANTOR_KYD,
+          balance_frozen: num((acc as any).balance_frozen) + GUARANTOR_KYD,
+        } as any)
         .eq('id', sourceAccountId);
+      if (error) throw error;
     }
   } else {
     // National bank account: freeze equivalent local amount = 500,000 / rateToPdh
@@ -120,9 +126,10 @@ async function freezeGuarantor(source: 'mahr' | 'national', sourceAccountId: str
     if (num((acc as any).balance_real) < neededLocal) {
       throw new Error(`La cuenta necesita al menos ${neededLocal.toFixed(2)} (equiv. a 500.000 PDH) para actuar como fiador.`);
     }
-    await supabase.from('national_bank_accounts')
+    const { error } = await supabase.from('national_bank_accounts')
       .update({ balance_real: num((acc as any).balance_real) - neededLocal } as any)
       .eq('id', sourceAccountId);
+    if (error) throw error;
   }
 }
 
@@ -133,25 +140,31 @@ async function refundGuarantor(bank: PrivateBank, rateToPdh: number): Promise<vo
     if (srcId === 'bank-main') {
       const { data: bm } = await supabase.from('bank_main_account').select('*').eq('id', 'bank-main').maybeSingle();
       if (bm) {
-        await supabase.from('bank_main_account')
+        const { error } = await supabase.from('bank_main_account')
           .update({ balance_pdh: num((bm as any).balance_pdh) + GUARANTOR_KYD } as any)
           .eq('id', 'bank-main');
+        if (error) throw error;
       }
     } else {
       const { data: acc } = await supabase.from('accounts').select('*').eq('id', srcId).maybeSingle();
       if (acc) {
-        await supabase.from('accounts')
-          .update({ balance_pdh: num((acc as any).balance_pdh) + GUARANTOR_KYD } as any)
+        const { error } = await supabase.from('accounts')
+          .update({
+            balance_pdh: num((acc as any).balance_pdh) + GUARANTOR_KYD,
+            balance_frozen: Math.max(0, num((acc as any).balance_frozen) - GUARANTOR_KYD),
+          } as any)
           .eq('id', srcId);
+        if (error) throw error;
       }
     }
   } else if (bank.guarantor_source_account_id) {
     const { data: acc } = await supabase.from('national_bank_accounts').select('*').eq('id', bank.guarantor_source_account_id).maybeSingle();
     if (acc) {
       const returnedLocal = rateToPdh > 0 ? GUARANTOR_KYD / rateToPdh : GUARANTOR_KYD;
-      await supabase.from('national_bank_accounts')
+      const { error } = await supabase.from('national_bank_accounts')
         .update({ balance_real: num((acc as any).balance_real) + returnedLocal } as any)
         .eq('id', bank.guarantor_source_account_id);
+      if (error) throw error;
     }
   }
 }
@@ -169,10 +182,11 @@ export async function syncGuarantor(bankId: string, rateToPdh: number): Promise<
 
   if (bank.guarantor_active && mainKydEq >= GUARANTOR_KYD) {
     await refundGuarantor(bank, rateToPdh);
-    await supabase.from('private_banks' as any).update({
+    const { error } = await supabase.from('private_banks' as any).update({
       guarantor_active: false,
       guarantor_frozen_kyd: 0,
     } as any).eq('id', bankId);
+    if (error) throw error;
   } else if (!bank.guarantor_active && mainKydEq < GUARANTOR_KYD) {
     try {
       await freezeGuarantor(
@@ -180,12 +194,13 @@ export async function syncGuarantor(bankId: string, rateToPdh: number): Promise<
         bank.guarantor_source_account_id || '',
         rateToPdh,
       );
-      await supabase.from('private_banks' as any).update({
+      const { error } = await supabase.from('private_banks' as any).update({
         guarantor_active: true,
         guarantor_frozen_kyd: GUARANTOR_KYD,
       } as any).eq('id', bankId);
-    } catch {
-      // No blockearemos si no hay fondos para refreeze; solo se deja el flag como estaba
+      if (error) throw error;
+    } catch (error) {
+      throw new Error(`No se pudo reactivar el fiador: ${error instanceof Error ? error.message : 'error de base de datos'}`);
     }
   }
 }
@@ -402,29 +417,65 @@ export async function privateDeposit(args: {
   amount: number; // in local currency
   currencyIso: string;
   rateToPdh: number;
+  sourceRateToPdh?: number;
   moneySource: 'printed' | 'symbolic';
   sourceNationalAccountId?: string; // for printed
   backingCurrency?: string;   // for symbolic
+  denominationBreakdown?: Record<string, number>;
 }): Promise<void> {
   const { bankId, toAccountId, amount, currencyIso, rateToPdh, moneySource } = args;
   if (amount <= 0) throw new Error('Monto inválido.');
   const to = await getAccount(toAccountId);
   const bank = await getBank(bankId);
+  const sourceRateToPdh = args.sourceRateToPdh ?? (
+    currencyIso === 'PDH' ? 1 : currencyIso === 'LDH' ? 9 : currencyIso === 'BDH' ? 81 : rateToPdh
+  );
+  const accountAmount = amount * (sourceRateToPdh || 1) / (rateToPdh || 1);
   const feeRate = num(bank.fee_deposit) / 100;
-  const fee = amount * feeRate;
-  const net = amount - fee;
+  const fee = accountAmount * feeRate;
+  const net = accountAmount - fee;
 
   if (moneySource === 'printed') {
-    if (!args.sourceNationalAccountId) throw new Error('Selecciona una cuenta origen del Banco Nacional.');
-    const { data: srcAcc } = await supabase.from('national_bank_accounts')
-      .select('*').eq('id', args.sourceNationalAccountId).maybeSingle();
-    if (!srcAcc) throw new Error('Cuenta origen no encontrada.');
-    if (num((srcAcc as any).balance_real) < amount) throw new Error('Saldo real insuficiente en la cuenta origen.');
-    await supabase.from('national_bank_accounts')
-      .update({ balance_real: num((srcAcc as any).balance_real) - amount } as any)
-      .eq('id', args.sourceNationalAccountId);
+    const resourceCurrency = ['PDH', 'LDH', 'BDH'].includes(currencyIso);
+    if (!resourceCurrency && (!args.denominationBreakdown || Object.keys(args.denominationBreakdown).length === 0)) {
+      throw new Error('Indica cuántos billetes recibes de cada denominación.');
+    }
+    const physicalTotal = Object.entries(args.denominationBreakdown).reduce(
+      (sum, [value, count]) => sum + Number(value) * Number(count), 0,
+    );
+    if (!resourceCurrency && Math.abs(physicalTotal - amount) > 0.000001) {
+      throw new Error(`Las denominaciones suman ${physicalTotal.toFixed(2)}, pero el monto indicado es ${amount.toFixed(2)}.`);
+    }
+    const { data: denominations, error: denominationError } = await supabase
+      .from('banknote_denominations' as any)
+      .select('id, value, boxes_printed')
+      .eq('national_bank_id', bank.national_bank_id);
+    if (denominationError) throw denominationError;
+    for (const [value, countRaw] of Object.entries(args.denominationBreakdown)) {
+      const count = Math.floor(Number(countRaw));
+      const denomination = (denominations as any[] || []).find(d => Math.abs(Number(d.value) - Number(value)) < 0.000001);
+      if (!denomination) throw new Error(`La denominación ${value} no está emitida por el Banco Nacional.`);
+      const { data: held } = await supabase.from('banknote_custody' as any)
+        .select('quantity').eq('denomination_id', denomination.id);
+      const alreadyHeld = (held as any[] || []).reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+      const issued = Number(denomination.boxes_printed || 0) * 16;
+      if (count > issued - alreadyHeld) {
+        throw new Error(`No hay suficientes billetes de ${value} en circulación. Disponibles: ${Math.max(0, issued - alreadyHeld)}.`);
+      }
+    }
     await supabase.from('private_bank_accounts' as any)
       .update({ balance_real: num(to.balance_real) + net } as any).eq('id', toAccountId);
+    for (const [value, countRaw] of Object.entries(args.denominationBreakdown)) {
+      const denomination = (denominations as any[] || []).find(d => Math.abs(Number(d.value) - Number(value)) < 0.000001);
+      if (denomination) {
+        const { data: current } = await supabase.from('banknote_custody' as any)
+          .select('quantity').eq('bank_type', 'private').eq('bank_id', bankId).eq('denomination_id', denomination.id).maybeSingle();
+        await supabase.from('banknote_custody' as any).upsert({
+          bank_type: 'private', bank_id: bankId, denomination_id: denomination.id,
+          quantity: Number(current?.quantity || 0) + Math.floor(Number(countRaw)), updated_at: new Date().toISOString(),
+        } as any, { onConflict: 'bank_type,bank_id,denomination_id' });
+      }
+    }
     // Transferencia desde el banco nacional: no es efectivo, no entra a la bóveda.
   } else {
     if (!args.backingCurrency) throw new Error('Selecciona la moneda de respaldo para dinero simbólico.');
@@ -451,7 +502,8 @@ export async function privateDeposit(args: {
     from_account_id: args.sourceNationalAccountId || null,
     to_account_id: toAccountId,
     amount: net, fee, money_source: moneySource, currency_iso: currencyIso,
-    description: `Depósito ${moneySource === 'symbolic' ? 'simbólico' : 'impreso'} ${amount.toFixed(2)} ${currencyIso} (fee ${fee.toFixed(2)})`,
+    denomination_breakdown: moneySource === 'printed' ? (args.denominationBreakdown || {}) : {},
+    description: `Depósito ${moneySource === 'symbolic' ? 'simbólico' : 'impreso'} ${amount.toFixed(2)} ${currencyIso} → ${net.toFixed(2)} moneda de cuenta (fee ${fee.toFixed(2)})`,
   });
 
   await assertReserveOk(bankId, rateToPdh).catch(async (e) => {
@@ -491,6 +543,13 @@ export async function privateWithdraw(args: {
   // Todo retiro entrega efectivo físico: debe existir en la bóveda (sin importar si el saldo era real o simbólico)
   const cash = num((bank as any).cash_on_hand);
   if (cash < netOut) throw new Error(`Efectivo insuficiente en la bóveda del banco privado (disponible ${cash.toFixed(2)} ${currencyIso}, requerido ${netOut.toFixed(2)}).`);
+  const { data: heldNotes } = await supabase.from('banknote_custody' as any)
+    .select('quantity, denomination_id, banknote_denominations(value)')
+    .eq('bank_type', 'private').eq('bank_id', bankId);
+  const heldValue = (heldNotes as any[] || []).reduce((sum, row) => sum + Number(row.quantity || 0) * Number(row.banknote_denominations?.value || 0), 0);
+  if (heldValue < netOut && !['PDH', 'LDH', 'BDH'].includes(currencyIso)) {
+    throw new Error(`Los billetes físicos registrados (${heldValue.toFixed(2)} ${currencyIso}) no cubren este retiro.`);
+  }
   await supabase.from('private_banks' as any)
     .update({ cash_on_hand: cash - netOut } as any).eq('id', bankId);
 

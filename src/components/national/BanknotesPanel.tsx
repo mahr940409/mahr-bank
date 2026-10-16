@@ -49,7 +49,7 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
     load();
   };
 
-  const print = async (d: Denom) => {
+  const print = async (d: Denom, notify = true) => {
     const n = Math.floor(boxes[d.id] || 0);
     if (n <= 0) return toast({ title: 'Error', description: 'Indica cuántas cajas imprimir.', variant: 'destructive' });
     if (!currencyId) return toast({ title: 'Error', description: 'El país no tiene moneda asignada.', variant: 'destructive' });
@@ -58,7 +58,7 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
       const amount = d.value * NOTES_PER_BOX * n;
       const { error } = await supabase.rpc('print_banknote_boxes' as any, { p_bank_id: bank.id, p_denomination_id: d.id, p_boxes: n } as any);
       if (error) throw error;
-      toast({ title: 'Impresión realizada', description: `${n} caja(s) × ${NOTES_PER_BOX} billetes de ${formatNumber(d.value)} = ${formatNumber(amount)} ${iso}` });
+      if (notify) toast({ title: 'Impresión realizada', description: `${n} caja(s) × ${NOTES_PER_BOX} billetes de ${formatNumber(d.value)} = ${formatNumber(amount)} ${iso}` });
       setBoxes((b) => ({ ...b, [d.id]: 0 }));
       await load();
       await onChanged();
@@ -89,7 +89,13 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
       toast({ title: 'Sin cajas pendientes', description: 'Indica un número mayor que 0 en al menos una denominación.', variant: 'destructive' });
       return;
     }
-    for (const denomination of pending) await print(denomination);
+    try {
+      for (const denomination of pending) await print(denomination, false);
+      const total = pending.reduce((sum, d) => sum + Math.floor(boxes[d.id] || 0) * NOTES_PER_BOX * d.value, 0);
+      toast({ title: 'Impresión realizada', description: `${pending.length} denominación(es), total ${formatNumber(total)} ${iso}.` });
+    } catch (e: any) {
+      toast({ title: 'Error en impresión', description: e.message, variant: 'destructive' });
+    }
   };
 
   return (
@@ -147,10 +153,6 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
                     <TableCell className="text-right whitespace-nowrap">
                       <Button size="sm" disabled={busy || n <= 0} onClick={() => print(d)}><Printer className="h-4 w-4 mr-1" />Imprimir</Button>
                       <Button size="icon" variant="ghost" onClick={() => removeDenom(d)}><Trash2 className="h-4 w-4" /></Button>
-                    </TableCell>
-                    <TableCell className="min-w-[180px]">
-                      <NumberInput value={bundles[d.id] ? String(bundles[d.id]) : ""} onChange={(v) => setBundles((b) => ({ ...b, [d.id]: Number(v) || 0 }))} placeholder={`${availableBundles} disponibles`} />
-                      <Button size="sm" variant="outline" className="mt-1" onClick={() => withdrawBundles(d)}>Retirar fajos</Button>
                     </TableCell>
                   </TableRow>
                 );

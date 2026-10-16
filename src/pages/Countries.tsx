@@ -303,7 +303,12 @@ export default function Countries() {
                   <TableCell>
                     <Badge variant="outline">{cur.iso_symbol}</Badge>
                   </TableCell>
-                  <TableCell>{formatNumber(cur.exchange_rate_to_pdh)} PDH</TableCell>
+                  <TableCell>
+                    <div>{formatNumber(cur.exchange_rate_to_pdh)} PDH</div>
+                    <div className="text-xs text-muted-foreground">
+                      1 PDH = {cur.exchange_rate_to_pdh > 0 ? formatNumber(1 / cur.exchange_rate_to_pdh) : '—'} {cur.iso_symbol}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {cur.is_fixed_rate ? (
                       <Badge variant="secondary" className="gap-1"><Lock className="h-3 w-3" /> Fija</Badge>
@@ -385,7 +390,14 @@ export default function Countries() {
                       <Badge variant="outline">{country.currency?.iso_symbol || '—'}</Badge>
                     </TableCell>
                     <TableCell>
-                      {country.currency ? formatNumber(country.currency.exchange_rate_to_pdh) + ' PDH' : '—'}
+                      {country.currency ? (
+                        <div>
+                          <div>{formatNumber(country.currency.exchange_rate_to_pdh)} PDH</div>
+                          <div className="text-xs text-muted-foreground">
+                            1 PDH = {country.currency.exchange_rate_to_pdh > 0 ? formatNumber(1 / country.currency.exchange_rate_to_pdh) : '—'} {country.currency.iso_symbol}
+                          </div>
+                        </div>
+                      ) : '—'}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
