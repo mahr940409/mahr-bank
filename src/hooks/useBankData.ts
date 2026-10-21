@@ -397,6 +397,14 @@ export function useBankData() {
     const toAccount = toAccountId === 'bank-main' ? bankAsAccount : accounts.find((acc) => acc.id === toAccountId);
     
     if (!fromAccount || !toAccount) return;
+    if (fromAccountId === 'bank-main' || toAccountId === 'bank-main') {
+      toast({ title: 'Operación no disponible', description: 'La cuenta operativa de MAHR Bank usa los flujos específicos de depósito, retiro o respaldo.', variant: 'destructive' });
+      return;
+    }
+    if (fromAccount.currency !== toAccount.currency) {
+      toast({ title: 'Moneda incompatible', description: 'Las transferencias entre cuentas MAHR deben usar la misma moneda.', variant: 'destructive' });
+      return;
+    }
     
     const result = processTransfer(fromAccount, toAccount, amount, currency, bankMainAccount);
     
