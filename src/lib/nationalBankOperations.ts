@@ -163,12 +163,7 @@ export async function createNationalBank(countryId: string, name: string): Promi
 }
 
 export async function deleteNationalBank(bankId: string): Promise<void> {
-  // hard delete (cascades not set; clean accounts/tx first)
-  await supabase.from('national_bank_accounts').delete().eq('national_bank_id', bankId);
-  await supabase.from('national_bank_transactions').delete().eq('national_bank_id', bankId);
-  await supabase.from('bank_backings' as any).delete().eq('bank_type', 'national').eq('bank_id', bankId);
-  const { error } = await supabase.from('national_banks').delete().eq('id', bankId);
-  if (error) throw error;
+  throw new Error('Los Bancos Nacionales no se eliminan; deben marcarse como inactivos para conservar su cuenta operativa e historial.');
 }
 
 export async function setBankStatus(bankId: string, status: string): Promise<void> {

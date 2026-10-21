@@ -279,15 +279,7 @@ export async function createPrivateBank(input: {
 }
 
 export async function deletePrivateBank(bankId: string, rateToPdh: number): Promise<void> {
-  const bank = await getBank(bankId);
-  if (bank.guarantor_active) {
-    await refundGuarantor(bank, rateToPdh);
-  }
-  await supabase.from('private_bank_accounts' as any).delete().eq('private_bank_id', bankId);
-  await supabase.from('private_bank_transactions' as any).delete().eq('private_bank_id', bankId);
-  await supabase.from('bank_backings' as any).delete().eq('bank_type', 'private').eq('bank_id', bankId);
-  const { error } = await supabase.from('private_banks' as any).delete().eq('id', bankId);
-  if (error) throw error;
+  throw new Error('Los Bancos Privados no se eliminan; deben marcarse como inactivos para conservar su cuenta principal e historial.');
 }
 
 export async function updatePrivateBank(bankId: string, patch: Partial<PrivateBank>): Promise<void> {
