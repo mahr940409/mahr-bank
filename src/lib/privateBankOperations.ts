@@ -506,6 +506,9 @@ export async function privateDeposit(args: {
     if (printedDepositError) throw printedDepositError;
   } else {
     if (!args.backingCurrency) throw new Error('Selecciona la moneda de respaldo para dinero simbólico.');
+    if (num(to.balance_symbolic) > 0 && (to as any).symbolic_backing_currency && (to as any).symbolic_backing_currency !== args.backingCurrency) {
+      throw new Error(`La cuenta ya tiene saldo simbólico respaldado por ${(to as any).symbolic_backing_currency}. Retíralo antes de usar ${args.backingCurrency}.`);
+    }
     const { data: dCountry } = await supabase.from('countries').select('currency_id').eq('id', (bank as any).country_id).maybeSingle();
     if (dCountry) {
       const { data: dCur } = await supabase.from('currencies').select('iso_symbol').eq('id', (dCountry as any).currency_id).maybeSingle();
