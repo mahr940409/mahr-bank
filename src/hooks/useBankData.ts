@@ -597,30 +597,12 @@ export function useBankData() {
       return;
     }
 
-    await supabase.from('loan_payments').update({ status: 'paid', paid_date: new Date().toISOString() }).eq('id', paymentId);
-
-    const newOutstandingBalance = loan.outstandingBalance - payment.principal;
-    const loanStatus = newOutstandingBalance <= 0 ? 'completed' : 'active';
-    await supabase.from('loans').update({ outstanding_balance: Math.max(0, newOutstandingBalance), status: loanStatus }).eq('id', loanId);
-
-    const newAccountBalance = account.balance - totalPayment;
-    await supabase.from('accounts').update({ balance_pdh: newAccountBalance } as any).eq('id', account.id);
-
-    const newBankBalance = bankMainAccount.balance + totalPaymentInPDH;
-    await supabase.from('bank_main_account').update({ balance_pdh: newBankBalance } as any).eq('id', 'bank-main');
-
-    const txnId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    await supabase.from('transactions').insert({
-      id: txnId,
-      transaction_type: 'loan_payment',
-      from_account_id: account.id,
-      from_account_number: account.accountNumber,
-      to_account_id: 'bank-main',
-      to_account_number: 'MAHR-BANK-000001',
-      amount: totalPayment,
-      currency: currency,
-      description: `Pago cuota #${payment.paymentNumber} - Préstamo ${loanId.slice(0, 8)}`,
-    });
+    const { error: paymentError } = await supabase.rpc('pay_loan_installment_atomic' as any, {
+      p_loan_id: loanId,
+      p_payment_id: paymentId,
+      p_currency: currency,
+    } as any);
+    if (paymentError) throw paymentError;
 
     await loadAllData();
     toast({ title: 'Pago realizado', description: `Cuota #${payment.paymentNumber} pagada exitosamente.` });
