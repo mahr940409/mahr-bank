@@ -480,8 +480,9 @@ export async function privateDeposit(args: {
         throw new Error(`No hay suficientes billetes de ${value} en circulación. Disponibles: ${Math.max(0, issued - alreadyHeld)}.`);
       }
     }
-    await supabase.from('private_bank_accounts' as any)
+    const { error: accountCreditError } = await supabase.from('private_bank_accounts' as any)
       .update({ balance_real: num(to.balance_real) + net } as any).eq('id', toAccountId);
+    if (accountCreditError) throw accountCreditError;
     for (const [value, countRaw] of Object.entries(args.denominationBreakdown)) {
       const denomination = (denominations as any[] || []).find(d => Math.abs(Number(d.value) - Number(value)) < 0.000001);
       if (denomination) {
@@ -507,8 +508,9 @@ export async function privateDeposit(args: {
     const { units } = await requireBackingFor('private', bankId, args.backingCurrency, equivPdh);
     // Consume reserve (mueve el respaldo a "circulación" simbólica). Se libera al retirar (en PDH).
     await adjustBacking('private', bankId, args.backingCurrency, -units);
-    await supabase.from('private_bank_accounts' as any)
+    const { error: symbolicCreditError } = await supabase.from('private_bank_accounts' as any)
       .update({ balance_symbolic: num(to.balance_symbolic) + net } as any).eq('id', toAccountId);
+    if (symbolicCreditError) throw symbolicCreditError;
   }
 
   await creditFeeToMain(bankId, fee);
@@ -563,8 +565,9 @@ export async function privateWithdraw(args: {
   if (heldValue < netOut && !['PDH', 'LDH', 'BDH'].includes(currencyIso)) {
     throw new Error(`Los billetes físicos registrados (${heldValue.toFixed(2)} ${currencyIso}) no cubren este retiro.`);
   }
-  await supabase.from('private_banks' as any)
+  const { error: cashUpdateError } = await supabase.from('private_banks' as any)
     .update({ cash_on_hand: cash - netOut } as any).eq('id', bankId);
+  if (cashUpdateError) throw cashUpdateError;
 
   // Liberar reserva simbólica (regresa al banco privado)
   if (symPart > 0) {
@@ -573,10 +576,11 @@ export async function privateWithdraw(args: {
   }
 
 
-  await supabase.from('private_bank_accounts' as any).update({
+  const { error: accountDebitError } = await supabase.from('private_bank_accounts' as any).update({
     balance_real: num(acc.balance_real) - realPart,
     balance_symbolic: num(acc.balance_symbolic) - symPart,
   } as any).eq('id', fromAccountId);
+  if (accountDebitError) throw accountDebitError;
 
   await creditFeeToMain(bankId, fee);
 
