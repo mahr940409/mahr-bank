@@ -46,7 +46,8 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
 
   const removeDenom = async (d: Denom) => {
     if (d.boxes_printed > 0) return toast({ title: 'No se puede eliminar', description: 'Ya se imprimieron billetes de esta denominación.', variant: 'destructive' });
-    await supabase.from('banknote_denominations' as any).delete().eq('id', d.id);
+    const { error } = await supabase.from('banknote_denominations' as any).delete().eq('id', d.id);
+    if (error) return toast({ title: 'Error', description: error.message, variant: 'destructive' });
     load();
   };
 
