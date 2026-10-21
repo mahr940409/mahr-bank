@@ -46,6 +46,23 @@ export default function Negotiables() {
     } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
   };
 
+  const issueBank = async () => {
+    try {
+      await issueCheque({
+        chequeType: 'bank',
+        issuerAccountId: 'bank-main',
+        issuerBankType: 'mahr',
+        issuerBankId: 'mahr-bank',
+        payeeName: payee,
+        currencyIso: 'PDH',
+        amount: Number(amount),
+        memo,
+      });
+      toast({ title: 'Cheque bancario emitido', description: 'El importe quedó congelado en la cuenta operativa MAHR.' });
+      setPayee(''); setAmount(''); setMemo(''); await load();
+    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+  };
+
   const issueNote = async () => {
     try {
       await issuePromissoryNote({ issuerAccountId: accountId, beneficiaryName: payee, currencyIso: currency, principal: Number(amount), interestRate: Number(noteRate) / 100, dueAt: dueAt || undefined, memo });
@@ -67,7 +84,7 @@ export default function Negotiables() {
   return <div className="space-y-6">
     <div><h1 className="text-3xl font-bold tracking-tight">Cheques y pagarés</h1><p className="text-muted-foreground">Obligaciones negociables y documentos de pago del banco.</p></div>
     <Card><CardHeader><CardTitle><Plus className="mr-2 inline h-4 w-4" />Emitir documento</CardTitle><CardDescription>Los cheques personales se cobran únicamente contra su banco emisor. El pagaré representa una obligación futura.</CardDescription></CardHeader><CardContent>
-      <Tabs defaultValue="cheque"><TabsList><TabsTrigger value="cheque">Cheque personal</TabsTrigger><TabsTrigger value="note">Pagaré</TabsTrigger></TabsList>
+      <Tabs defaultValue="cheque"><TabsList><TabsTrigger value="cheque">Cheque personal</TabsTrigger><TabsTrigger value="bank-cheque">Cheque bancario MAHR</TabsTrigger><TabsTrigger value="note">Pagaré</TabsTrigger></TabsList>
         <div className="grid gap-3 pt-4 md:grid-cols-2">
           <div><Label>Cuenta emisora</Label><Select value={accountId} onValueChange={setAccountId}><SelectTrigger><SelectValue placeholder="Selecciona cuenta" /></SelectTrigger><SelectContent>{accounts.filter(a => a.id !== 'bank-main').map(a => <SelectItem key={a.id} value={a.id}>{a.userName} · {a.accountNumber}</SelectItem>)}</SelectContent></Select></div>
           <div><Label>Beneficiario</Label><Input value={payee} onChange={e => setPayee(e.target.value)} placeholder="Nombre del beneficiario" /></div>
@@ -77,6 +94,7 @@ export default function Negotiables() {
           <div className="md:col-span-2"><Label>Concepto</Label><Textarea value={memo} onChange={e => setMemo(e.target.value)} /></div>
         </div>
         <TabsContent value="cheque"><Button className="mt-4" disabled={!accountId || !payee || Number(amount) <= 0} onClick={issuePersonal}><FileText className="mr-2 h-4 w-4" />Emitir cheque</Button></TabsContent>
+        <TabsContent value="bank-cheque" className="space-y-2"><p className="text-sm text-muted-foreground">Se emite en PDH contra la cuenta operativa del MAHR Bank y congela el importe hasta su cobro o cancelación.</p><Button className="mt-2" disabled={!payee || Number(amount) <= 0} onClick={issueBank}><FileText className="mr-2 h-4 w-4" />Emitir cheque bancario</Button></TabsContent>
         <TabsContent value="note"><Button className="mt-4" disabled={!accountId || !payee || Number(amount) <= 0} onClick={issueNote}><FileText className="mr-2 h-4 w-4" />Emitir pagaré</Button></TabsContent>
       </Tabs>
     </CardContent></Card>
