@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { NumberInput } from '@/components/ui/number-input';
 import { toast } from '@/hooks/use-toast';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { formatNumber } from '@/lib/currencyUtils';
 import { Plus, Trash2, RefreshCw, PauseCircle, PlayCircle, RotateCcw } from 'lucide-react';
 
@@ -22,6 +23,7 @@ export function BondsPanel({ bank }: Props) {
   const { bonds, holdings, loading, createBond, deleteBond, setBondStatus, processCoupons, repurchaseHolding } = useBonds();
   const [openCreate, setOpenCreate] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ title: string; description: string; confirmLabel?: string; onConfirm: () => Promise<void> } | null>(null);
 
   const myBonds = bonds.filter(b => b.national_bank_id === bank.id);
   const myHoldings = holdings.filter(h => myBonds.some(b => b.id === h.bond_id));
@@ -91,7 +93,7 @@ export function BondsPanel({ bank }: Props) {
                             <PlayCircle className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button variant="ghost" size="icon" onClick={async () => { if (confirm('Eliminar bono?')) { try { await deleteBond(b.id); toast({ title: 'Bono eliminado' }); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } }}>
+                        <Button variant="ghost" size="icon" onClick={() => setConfirmation({ title: 'Eliminar bono', description: 'Esta acción no se puede deshacer si no existen tenencias activas.', confirmLabel: 'Eliminar', onConfirm: async () => { try { await deleteBond(b.id); toast({ title: 'Bono eliminado' }); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } })}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -135,7 +137,7 @@ export function BondsPanel({ bank }: Props) {
                       <TableCell><Badge variant={h.status === 'active' ? 'default' : 'secondary'}>{h.status}</Badge></TableCell>
                       <TableCell className="text-right">
                         {h.status === 'active' && (
-                          <Button variant="outline" size="sm" onClick={async () => { if (confirm('Recomprar (devolver capital + cupones pendientes)?')) { try { await repurchaseHolding(h.id); toast({ title: 'Recompra realizada' }); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } }}>
+                          <Button variant="outline" size="sm" onClick={() => setConfirmation({ title: 'Recomprar bono', description: 'Se devolverá el capital más los cupones pendientes disponibles.', confirmLabel: 'Recomprar', onConfirm: async () => { try { await repurchaseHolding(h.id); toast({ title: 'Recompra realizada' }); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } })}>
                             <RotateCcw className="h-3 w-3 mr-1" /> Recomprar
                           </Button>
                         )}
@@ -148,6 +150,8 @@ export function BondsPanel({ bank }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {confirmation && <ConfirmDialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open) setConfirmation(null); }} title={confirmation.title} description={confirmation.description} confirmLabel={confirmation.confirmLabel} destructive onConfirm={async () => { await confirmation.onConfirm(); setConfirmation(null); }} />}
 
       <CreateBondDialog open={openCreate} onOpenChange={setOpenCreate} bank={bank} onCreate={async (args) => {
         try { await createBond(args); toast({ title: 'Bono emitido' }); setOpenCreate(false); }
