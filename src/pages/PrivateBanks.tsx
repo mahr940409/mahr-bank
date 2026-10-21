@@ -470,11 +470,12 @@ function OpDialog({ mode, onClose, bank, pb, prefillAccId, nationalAccounts }: a
   useEffect(() => {
     if (mode !== 'deposit' || moneySource !== 'printed') return;
     supabase.from('banknote_denominations' as any)
-      .select('id, value, boxes_printed, bundles_withdrawn')
+      .select('id, value, currency_iso, boxes_printed, bundles_withdrawn')
       .eq('national_bank_id', bank.national_bank_id)
+      .eq('currency_iso', depositCurrency)
       .order('value', { ascending: true })
       .then(({ data }) => setDenoms((data as any[]) || []));
-  }, [mode, moneySource, bank.national_bank_id]);
+  }, [mode, moneySource, bank.national_bank_id, depositCurrency]);
 
   useMemo(() => { if (prefillAccId) setAccId(prefillAccId); }, [prefillAccId, mode]);
 

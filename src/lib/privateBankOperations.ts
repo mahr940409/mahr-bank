@@ -440,13 +440,14 @@ export async function privateDeposit(args: {
     }
     const { data: denominations, error: denominationError } = await supabase
       .from('banknote_denominations' as any)
-      .select('id, value, boxes_printed')
+      .select('id, value, currency_iso, boxes_printed')
       .eq('national_bank_id', bank.national_bank_id);
     if (denominationError) throw denominationError;
     for (const [value, countRaw] of Object.entries(args.denominationBreakdown)) {
       const count = Math.floor(Number(countRaw));
       const denomination = (denominations as any[] || []).find(d => Math.abs(Number(d.value) - Number(value)) < 0.000001);
       if (!denomination) throw new Error(`La denominación ${value} no está emitida por el Banco Nacional.`);
+      if (denomination.currency_iso !== currencyIso) throw new Error(`La denominación ${value} pertenece a ${denomination.currency_iso}, no a ${currencyIso}.`);
       const { data: held } = await supabase.from('banknote_custody' as any)
         .select('quantity').eq('denomination_id', denomination.id);
       const alreadyHeld = (held as any[] || []).reduce((sum, row) => sum + Number(row.quantity || 0), 0);

@@ -29,15 +29,16 @@ export function BanknotesPanel({ bank, onChanged }: { bank: any; onChanged: () =
       .from('banknote_denominations' as any)
       .select('id, value, boxes_printed, bundles_withdrawn')
       .eq('national_bank_id', bank.id)
+      .eq('currency_iso', iso)
       .order('value');
     setDenoms(((data as any[]) || []).map((d) => ({ ...d, value: Number(d.value), bundles_withdrawn: Number(d.bundles_withdrawn || 0) })));
   };
-  useEffect(() => { load(); }, [bank.id]);
+  useEffect(() => { load(); }, [bank.id, iso]);
 
   const addDenom = async () => {
     if (!(newValue > 0)) return toast({ title: 'Error', description: 'Escribe un valor mayor a 0.', variant: 'destructive' });
     if (denoms.some((d) => d.value === newValue)) return toast({ title: 'Error', description: 'Esa denominación ya existe.', variant: 'destructive' });
-    const { error } = await supabase.from('banknote_denominations' as any).insert({ national_bank_id: bank.id, value: newValue } as any);
+    const { error } = await supabase.from('banknote_denominations' as any).insert({ national_bank_id: bank.id, currency_iso: iso, value: newValue } as any);
     if (error) return toast({ title: 'Error', description: error.message, variant: 'destructive' });
     setNewValue(0);
     load();
