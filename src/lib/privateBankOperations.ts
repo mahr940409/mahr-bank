@@ -506,10 +506,11 @@ export async function privateDeposit(args: {
       if (denomination) {
         const { data: current } = await supabase.from('banknote_custody' as any)
           .select('quantity').eq('bank_type', 'private').eq('bank_id', bankId).eq('denomination_id', denomination.id).maybeSingle();
-        await supabase.from('banknote_custody' as any).upsert({
+        const { error: custodyError } = await supabase.from('banknote_custody' as any).upsert({
           bank_type: 'private', bank_id: bankId, denomination_id: denomination.id,
           quantity: Number(current?.quantity || 0) + Math.floor(Number(countRaw)), updated_at: new Date().toISOString(),
         } as any, { onConflict: 'bank_type,bank_id,denomination_id' });
+        if (custodyError) throw custodyError;
       }
     }
     // Transferencia desde el banco nacional: no es efectivo, no entra a la bóveda.
