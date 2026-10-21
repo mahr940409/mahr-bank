@@ -673,9 +673,11 @@ export function useBankData() {
     if (newOutstanding <= 0) {
       // Fully paid via abono
       for (const p of pending) {
-        await supabase.from('loan_payments').update({ status: 'paid', paid_date: new Date().toISOString() }).eq('id', p.id);
+        const { error } = await supabase.from('loan_payments').update({ status: 'paid', paid_date: new Date().toISOString() }).eq('id', p.id);
+        if (error) throw error;
       }
-      await supabase.from('loans').update({ outstanding_balance: 0, status: 'completed', end_date: new Date().toISOString() }).eq('id', loanId);
+      const { error } = await supabase.from('loans').update({ outstanding_balance: 0, status: 'completed', end_date: new Date().toISOString() }).eq('id', loanId);
+      if (error) throw error;
     } else if (pending.length > 0) {
       const weeks = pending.length;
       const annualRate = loan.interestRate;
@@ -686,26 +688,31 @@ export function useBankData() {
         const interest = remaining * weeklyRate;
         const principal = newWeeklyPayment - interest;
         remaining -= principal;
-        await supabase.from('loan_payments').update({
+        const { error } = await supabase.from('loan_payments').update({
           amount: Math.round(newWeeklyPayment * 100) / 100,
           principal: Math.round(principal * 100) / 100,
           interest: Math.round(Math.max(0, interest) * 100) / 100,
         }).eq('id', p.id);
+        if (error) throw error;
       }
-      await supabase.from('loans').update({
+      const { error } = await supabase.from('loans').update({
         outstanding_balance: newOutstanding,
         monthly_payment: Math.round(newWeeklyPayment * 100) / 100,
       }).eq('id', loanId);
+      if (error) throw error;
     } else {
-      await supabase.from('loans').update({ outstanding_balance: newOutstanding }).eq('id', loanId);
+      const { error } = await supabase.from('loans').update({ outstanding_balance: newOutstanding }).eq('id', loanId);
+      if (error) throw error;
     }
 
     const amountInPDH = convertCurrency(amount, currency, 'PDH');
-    await supabase.from('accounts').update({ balance_pdh: account.balance - amount } as any).eq('id', account.id);
-    await supabase.from('bank_main_account').update({ balance_pdh: bankMainAccount.balance + amountInPDH } as any).eq('id', 'bank-main');
+    const { error: accountError } = await supabase.from('accounts').update({ balance_pdh: account.balance - amount } as any).eq('id', account.id);
+    if (accountError) throw accountError;
+    const { error: bankError } = await supabase.from('bank_main_account').update({ balance_pdh: bankMainAccount.balance + amountInPDH } as any).eq('id', 'bank-main');
+    if (bankError) throw bankError;
 
     const txnId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    await supabase.from('transactions').insert({
+    const { error: transactionError } = await supabase.from('transactions').insert({
       id: txnId,
       transaction_type: 'loan_payment',
       from_account_id: account.id,
@@ -716,6 +723,7 @@ export function useBankData() {
       currency,
       description: `Abono a capital - Préstamo ${loanId.slice(0, 8)}`,
     });
+    if (transactionError) throw transactionError;
 
     await loadAllData();
     toast({ title: 'Abono realizado', description: `Se abonaron ${amount.toFixed(2)} ${currency} a capital.` });
