@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { FileText, Plus, CheckCircle, XCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { issueCheque, issuePromissoryNote, presentPersonalCheque, cancelCheque, payPromissoryNote } from '@/lib/negotiableOperations';
+import { issueCheque, issuePromissoryNote, presentPersonalCheque, presentBankCheque, cancelCheque, payPromissoryNote } from '@/lib/negotiableOperations';
 import { useBankData } from '@/hooks/useBankData';
 import { formatNumber } from '@/lib/currencyUtils';
 import { toast } from '@/hooks/use-toast';
@@ -55,7 +55,12 @@ export default function Negotiables() {
   };
 
   const present = async (id: string) => {
-    try { await presentPersonalCheque(id, 'mahr-bank'); toast({ title: 'Cheque pagado' }); await load(); }
+    try {
+      const cheque = cheques.find(c => c.id === id);
+      if (cheque?.cheque_type === 'bank') await presentBankCheque(id);
+      else await presentPersonalCheque(id, 'mahr-bank');
+      toast({ title: 'Cheque pagado' }); await load();
+    }
     catch (e: any) { toast({ title: 'Cheque rechazado', description: e.message, variant: 'destructive' }); await load(); }
   };
 

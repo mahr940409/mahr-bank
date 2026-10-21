@@ -20,6 +20,20 @@ export async function issueCheque(input: {
   if (input.chequeType === 'bank' && (!input.issuerBankType || !input.issuerBankId)) {
     throw new Error('El cheque bancario necesita un banco emisor.');
   }
+  if (input.chequeType === 'bank') {
+    const { data, error } = await supabase.rpc('issue_bank_cheque' as any, {
+      p_issuer_bank_type: input.issuerBankType,
+      p_issuer_bank_id: input.issuerBankId,
+      p_issuer_account_id: input.issuerAccountId || null,
+      p_payee_name: input.payeeName.trim(),
+      p_payee_account_id: input.payeeAccountId || null,
+      p_currency_iso: input.currencyIso,
+      p_amount: input.amount,
+      p_memo: input.memo || null,
+    } as any);
+    if (error) throw error;
+    return data;
+  }
   const { data, error } = await supabase.from('cheques' as any).insert({
     cheque_type: input.chequeType,
     issuer_account_id: input.issuerAccountId || null,
@@ -29,7 +43,7 @@ export async function issueCheque(input: {
     payee_account_id: input.payeeAccountId || null,
     currency_iso: input.currencyIso,
     amount: input.amount,
-    frozen_amount: input.chequeType === 'bank' ? input.amount : 0,
+    frozen_amount: 0,
     memo: input.memo || null,
   } as any).select('*').single();
   if (error) throw error;
@@ -43,8 +57,17 @@ export async function presentPersonalCheque(chequeId: string, payingBankId: stri
 }
 
 export async function cancelCheque(chequeId: string) {
-  const { error } = await supabase.from('cheques' as any).update({ status: 'cancelled', frozen_amount: 0 }).eq('id', chequeId).eq('status', 'issued');
+  const { data: cheque } = await supabase.from('cheques' as any).select('cheque_type').eq('id', chequeId).maybeSingle();
+  const { error } = cheque?.cheque_type === 'bank'
+    ? await supabase.rpc('cancel_bank_cheque' as any, { p_cheque_id: chequeId } as any)
+    : await supabase.from('cheques' as any).update({ status: 'cancelled', frozen_amount: 0 }).eq('id', chequeId).eq('status', 'issued');
   if (error) throw error;
+}
+
+export async function presentBankCheque(chequeId: string) {
+  const { data, error } = await supabase.rpc('present_bank_cheque' as any, { p_cheque_id: chequeId } as any);
+  if (error) throw error;
+  return data;
 }
 
 export async function payPromissoryNote(noteId: string) {
