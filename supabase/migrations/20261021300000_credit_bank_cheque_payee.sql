@@ -29,6 +29,10 @@ BEGIN
     EXECUTE format('UPDATE public.accounts SET %I = %I + $1, updated_at = now() WHERE id = $2', v_column, v_column)
       USING v_cheque.amount, v_payee.id;
   END IF;
+  INSERT INTO public.transactions (id, transaction_type, from_account_id, to_account_id, amount, currency, description)
+    VALUES ('TXN-' || extract(epoch FROM clock_timestamp())::bigint || '-' || substr(gen_random_uuid()::text, 1, 8),
+      'transfer', v_cheque.issuer_account_id, v_cheque.payee_account_id, v_cheque.amount, v_cheque.currency_iso,
+      'Cobro de cheque bancario ' || v_cheque.cheque_number);
   UPDATE public.cheques SET status = 'paid', presented_at = now(), paid_at = now(), frozen_amount = 0
     WHERE id = v_cheque.id RETURNING * INTO v_result;
   RETURN v_result;
@@ -60,6 +64,10 @@ BEGIN
     IF COALESCE(v_payee.currency, 'PDH') <> v_cheque.currency_iso THEN RAISE EXCEPTION 'La moneda no coincide con la cuenta beneficiaria'; END IF;
     EXECUTE format('UPDATE public.accounts SET %I = %I + $1, updated_at = now() WHERE id = $2', v_column, v_column) USING v_cheque.amount, v_payee.id;
   END IF;
+  INSERT INTO public.transactions (id, transaction_type, from_account_id, to_account_id, amount, currency, description)
+    VALUES ('TXN-' || extract(epoch FROM clock_timestamp())::bigint || '-' || substr(gen_random_uuid()::text, 1, 8),
+      'transfer', v_cheque.issuer_account_id, v_cheque.payee_account_id, v_cheque.amount, v_cheque.currency_iso,
+      'Cobro de cheque personal ' || v_cheque.cheque_number);
   UPDATE public.cheques SET status = 'paid', presented_at = now(), paid_at = now() WHERE id = v_cheque.id RETURNING * INTO v_cheque;
   RETURN v_cheque;
 END; $$;
