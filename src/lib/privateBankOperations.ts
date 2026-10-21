@@ -518,7 +518,7 @@ export async function privateDeposit(args: {
     // Consume reserve (mueve el respaldo a "circulación" simbólica). Se libera al retirar (en PDH).
     await adjustBacking('private', bankId, args.backingCurrency, -units);
     const { error: symbolicCreditError } = await supabase.from('private_bank_accounts' as any)
-      .update({ balance_symbolic: num(to.balance_symbolic) + net } as any).eq('id', toAccountId);
+      .update({ balance_symbolic: num(to.balance_symbolic) + net, symbolic_backing_currency: args.backingCurrency } as any).eq('id', toAccountId);
     if (symbolicCreditError) throw symbolicCreditError;
   }
 
@@ -581,7 +581,9 @@ export async function privateWithdraw(args: {
   // Liberar reserva simbólica (regresa al banco privado)
   if (symPart > 0) {
     const equivPdh = symPart * (rateToPdh || 1);
-    await adjustBacking('private', bankId, 'PDH', equivPdh);
+    const backingCurrency = (acc as any).symbolic_backing_currency || 'PDH';
+    const backingRate = backingCurrency === 'PDH' ? 1 : await getRateToPdh(backingCurrency);
+    await adjustBacking('private', bankId, backingCurrency, equivPdh / (backingRate || 1));
   }
 
 
