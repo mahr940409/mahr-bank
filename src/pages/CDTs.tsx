@@ -93,8 +93,6 @@ export default function CDTs() {
     loadCDTs();
   }, []);
 
-  const generateTxId = () => `TXN-${Date.now()}-${Math.random().toString(36).slice(2, 13)}`;
-
   const handleCreateCDT = async (accountId: string, amount: number, currency: string, termWeeks: number, frequency: InterestPayoutFrequency, isIndefinite: boolean) => {
     try {
       const account = accounts.find(a => a.id === accountId);
@@ -129,65 +127,17 @@ export default function CDTs() {
 
   const handleLiquidate = async (cdt: CDT, early: boolean = false) => {
     try {
-      const account = accounts.find(a => a.id === cdt.accountId);
-      if (!account) throw new Error('Cuenta no encontrada');
-
-      let returnAmount: number;
-      let descriptionText: string;
-
-      if (cdt.isIndefinite) {
-        // Indefinite CDTs always return full capital
-        returnAmount = cdt.amount;
-        descriptionText = `Cancelación CDT Indefinido - Devolución completa de capital: ${formatNumber(cdt.amount)} ${cdt.currency}`;
-      } else if (early) {
-        const penaltyAmount = cdt.amount * cdt.earlyWithdrawalPenalty;
-        returnAmount = cdt.amount - penaltyAmount;
-        descriptionText = `Retiro anticipado CDT - Capital: ${formatNumber(cdt.amount)} - Penalización ${(cdt.earlyWithdrawalPenalty * 100).toFixed(0)}%: ${formatNumber(penaltyAmount)} = Devuelto: ${formatNumber(returnAmount)} ${cdt.currency}`;
-      } else {
-        returnAmount = cdt.finalAmount;
-        descriptionText = `Vencimiento CDT - Capital: ${formatNumber(cdt.amount)} + Intereses: ${formatNumber(cdt.finalAmount - cdt.amount)} = Total: ${formatNumber(cdt.finalAmount)} ${cdt.currency}`;
-      }
-
-      // 1. Update CDT status
-      const { error: cdtError } = await supabase
-        .from('cdts')
-        .update({ status: cdt.isIndefinite ? 'liquidated' : (early ? 'cancelled' : 'liquidated') })
-        .eq('id', cdt.id);
-
-      if (cdtError) {
-        console.error('Error updating CDT status:', cdtError);
-        throw cdtError;
-      }
-
-      // 2. Add to account balance
-      const newBalance = account.balance + returnAmount;
-      const { error: accountError } = await supabase
-        .from('accounts')
-        .update({ balance_pdh: newBalance } as any)
-        .eq('id', cdt.accountId);
-
-      if (accountError) {
-        console.error('Error updating account balance:', accountError);
-        throw accountError;
-      }
-
-      // 3. Record transaction
-      const { error: transactionError } = await supabase.from('transactions').insert({
-        id: generateTxId(),
-        transaction_type: early ? 'cdt_early_withdrawal' : 'cdt_maturity',
-        to_account_id: cdt.accountId,
-        to_account_number: account.accountNumber,
-        amount: returnAmount,
-        currency: cdt.currency,
-        description: descriptionText,
-      });
-      if (transactionError) throw new Error(`Error al registrar liquidación del CDT: ${transactionError.message}`);
+      const { data: returnAmount, error } = await supabase.rpc('liquidate_cdt_atomic' as any, {
+        p_cdt_id: cdt.id,
+        p_early: early,
+      } as any);
+      if (error) throw error;
 
       const successMsg = cdt.isIndefinite
-        ? `CDT cancelado. Devuelto: ${formatNumber(returnAmount)} ${cdt.currency}`
+        ? `CDT cancelado. Devuelto: ${formatNumber(Number(returnAmount))} ${cdt.currency}`
         : early
-          ? `CDT cancelado con penalización. Devuelto: ${formatNumber(returnAmount)} ${cdt.currency} (de ${formatNumber(cdt.amount)} ${cdt.currency})`
-          : `CDT liquidado. Recibido: ${formatNumber(returnAmount)} ${cdt.currency}`;
+          ? `CDT cancelado con penalización. Devuelto: ${formatNumber(Number(returnAmount))} ${cdt.currency} (de ${formatNumber(cdt.amount)} ${cdt.currency})`
+          : `CDT liquidado. Recibido: ${formatNumber(Number(returnAmount))} ${cdt.currency}`;
       toast.success(successMsg);
       loadCDTs();
     } catch (error: any) {
