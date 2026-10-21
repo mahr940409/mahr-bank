@@ -286,11 +286,12 @@ export function useBankData() {
     if (accountId === 'bank-main') {
       // The main balance also contains international transaction backing.
       // It must remain locked and cannot be withdrawn as free MAHR liquidity.
-      const [{ data: backingRows, error: backingError }, { data: currencyRows, error: currencyError }] = await Promise.all([
+      const [{ data: backingRows, error: backingError }, { data: currencyRows, error: currencyError }, { data: mainRow, error: mainError }] = await Promise.all([
         supabase.from('bank_backings' as any).select('amount, currency_iso').eq('bank_type', 'national'),
         supabase.from('currencies').select('iso_symbol, exchange_rate_to_pdh, pdh_reserves, printed_amount, burned_amount'),
+        supabase.from('bank_main_account' as any).select('balance_frozen_pdh').eq('id', 'bank-main').maybeSingle(),
       ]);
-      if (backingError || currencyError) {
+      if (backingError || currencyError || mainError) {
         toast({ title: 'Retiro bloqueado', description: 'No se pudo verificar el respaldo comprometido de MAHR Bank.', variant: 'destructive' });
         return;
       }
@@ -302,10 +303,11 @@ export function useBankData() {
       const committedInternationalPdh = ((backingRows as any[]) || []).reduce(
         (sum, row) => sum + Number(row.amount || 0) * (rates[row.currency_iso] || 0), 0,
       );
+      const frozenChequePdh = Number((mainRow as any)?.balance_frozen_pdh || 0);
       const requestedPdh = convertToPDH(amount, currency);
-      const freeMainPdh = Math.max(0, bankMainAccount.balance - committedInternationalPdh);
+      const freeMainPdh = Math.max(0, bankMainAccount.balance - committedInternationalPdh - frozenChequePdh);
       if (requestedPdh > freeMainPdh + 1e-9) {
-        toast({ title: 'Retiro no disponible', description: `La cuenta principal tiene ${committedInternationalPdh.toFixed(2)} PDH comprometidos como respaldo internacional. Disponible libre: ${freeMainPdh.toFixed(2)} PDH.`, variant: 'destructive' });
+        toast({ title: 'Retiro no disponible', description: `${committedInternationalPdh.toFixed(2)} PDH están comprometidos como respaldo internacional y ${frozenChequePdh.toFixed(2)} PDH están congelados por cheques. Disponible libre: ${freeMainPdh.toFixed(2)} PDH.`, variant: 'destructive' });
         return;
       }
     }
