@@ -197,6 +197,17 @@ async function adjustIssuanceReserve(bankId: string, delta: number, reserveCurre
     amount: Math.max(0, Number((existingCustody as any)?.amount || 0) + delta),
   }, { onConflict: 'national_bank_id,custody_type,currency_iso' });
   if (custodyError) throw custodyError;
+
+  // The national bank's currency-defense reserve is physically held by MAHR.
+  // Keep that custody separate from international transaction backing.
+  const { data: mahrCustody } = await supabase.from('mahr_reserve_custody' as any)
+    .select('id, amount').eq('reserve_type', 'currency_defense').eq('currency_iso', reserveCurrency).maybeSingle();
+  const nextMahrAmount = Number((mahrCustody as any)?.amount || 0) + delta;
+  if (nextMahrAmount < -1e-9) throw new Error(`Custodia de defensa insuficiente en ${reserveCurrency}.`);
+  const { error: mahrCustodyError } = mahrCustody
+    ? await supabase.from('mahr_reserve_custody' as any).update({ amount: Math.max(0, nextMahrAmount) }).eq('id', (mahrCustody as any).id)
+    : await supabase.from('mahr_reserve_custody' as any).insert({ reserve_type: 'currency_defense', currency_iso: reserveCurrency, amount: Math.max(0, nextMahrAmount), frozen: 0 });
+  if (mahrCustodyError) throw mahrCustodyError;
 }
 
 export async function addIssuanceReserve(bankId: string, amount: number, currencyIso = 'PDH'): Promise<void> {
