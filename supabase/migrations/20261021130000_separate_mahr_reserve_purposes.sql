@@ -23,6 +23,16 @@ CREATE POLICY "Authenticated users can manage MAHR reserve custody"
   ON public.mahr_reserve_custody FOR ALL TO authenticated USING (true) WITH CHECK (true);
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.mahr_reserve_custody TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
 DROP TRIGGER IF EXISTS update_mahr_reserve_custody_updated_at ON public.mahr_reserve_custody;
 CREATE TRIGGER update_mahr_reserve_custody_updated_at
   BEFORE UPDATE ON public.mahr_reserve_custody
