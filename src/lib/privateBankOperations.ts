@@ -209,12 +209,12 @@ export async function syncGuarantor(bankId: string, rateToPdh: number): Promise<
 /**
  * Enforces 10% PDH+KYD reserves on total client balances (in PDH-equivalent).
  */
-export async function assertReserveOk(bankId: string, rateToPdh: number, extraManagedLocal = 0): Promise<void> {
+export async function assertReserveOk(bankId: string, rateToPdh: number, extraManagedLocal = 0, reserveDeltaPdh = 0): Promise<void> {
   const { data: accs } = await supabase.from('private_bank_accounts' as any)
     .select('*').eq('private_bank_id', bankId).neq('type', 'main');
   const totalLocal = (accs as any[] || []).reduce((s, a) => s + num(a.balance_real) + num(a.balance_symbolic), 0) + extraManagedLocal;
   const totalPdh = totalLocal * (rateToPdh || 1);
-  let reserves = 0;
+  let reserves = reserveDeltaPdh;
   for (const r of await getBackings('private', bankId)) {
     try { reserves += r.amount * (await getRateToPdh(r.currency_iso)); } catch { /* sin valor */ }
   }
@@ -446,6 +446,11 @@ export async function privateDeposit(args: {
   const fee = accountAmount * feeRate;
   const net = accountAmount - fee;
 
+  // Validate the post-operation reserve ratio before touching balances,
+  // custody or transaction history. Symbolic deposits consume backing.
+  const reserveDeltaPdh = moneySource === 'symbolic' ? -(amount * (rateToPdh || 1)) : 0;
+  await assertReserveOk(bankId, rateToPdh, net, reserveDeltaPdh);
+
   if (moneySource === 'printed') {
     const resourceCurrency = ['PDH', 'LDH', 'BDH'].includes(currencyIso);
     if (!resourceCurrency && (!args.denominationBreakdown || Object.keys(args.denominationBreakdown).length === 0)) {
@@ -518,10 +523,6 @@ export async function privateDeposit(args: {
     description: `Depósito ${moneySource === 'symbolic' ? 'simbólico' : 'impreso'} ${amount.toFixed(2)} ${currencyIso} → ${net.toFixed(2)} moneda de cuenta (fee ${fee.toFixed(2)})`,
   });
 
-  await assertReserveOk(bankId, rateToPdh).catch(async (e) => {
-    // rollback? Simplemente relanzar (los datos ya cambiaron; en un simulador es tolerable).
-    throw e;
-  });
   await syncGuarantor(bankId, rateToPdh);
 }
 
