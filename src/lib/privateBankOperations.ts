@@ -452,6 +452,19 @@ export async function privateDeposit(args: {
   await assertReserveOk(bankId, rateToPdh, net, reserveDeltaPdh);
 
   if (moneySource === 'printed') {
+    if (!args.sourceNationalAccountId) {
+      throw new Error('Selecciona la cuenta del Banco Nacional de donde salen los billetes.');
+    }
+    const { data: sourceNational, error: sourceNationalError } = await supabase
+      .from('national_bank_accounts' as any)
+      .select('id, national_bank_id, balance_real, backing_currency')
+      .eq('id', args.sourceNationalAccountId)
+      .maybeSingle();
+    if (sourceNationalError) throw sourceNationalError;
+    if (!sourceNational) throw new Error('La cuenta nacional de origen no existe.');
+    if (num(sourceNational.balance_real) < amount) {
+      throw new Error('Saldo real insuficiente en la cuenta nacional de origen.');
+    }
     const resourceCurrency = ['PDH', 'LDH', 'BDH'].includes(currencyIso);
     if (!resourceCurrency && (!args.denominationBreakdown || Object.keys(args.denominationBreakdown).length === 0)) {
       throw new Error('Indica cuántos billetes recibes de cada denominación.');
@@ -480,6 +493,11 @@ export async function privateDeposit(args: {
         throw new Error(`No hay suficientes billetes de ${value} en circulación. Disponibles: ${Math.max(0, issued - alreadyHeld)}.`);
       }
     }
+    const { error: sourceDebitError } = await supabase.from('national_bank_accounts' as any)
+      .update({ balance_real: num(sourceNational.balance_real) - amount } as any)
+      .eq('id', sourceNational.id)
+      .gte('balance_real', amount);
+    if (sourceDebitError) throw sourceDebitError;
     const { error: accountCreditError } = await supabase.from('private_bank_accounts' as any)
       .update({ balance_real: num(to.balance_real) + net } as any).eq('id', toAccountId);
     if (accountCreditError) throw accountCreditError;
