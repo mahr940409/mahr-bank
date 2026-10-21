@@ -248,6 +248,11 @@ export async function createPrivateBank(input: {
   await freezeGuarantor(guarantorSource, guarantorSourceAccountId || '', rateToPdh);
 
   const bankId = crypto.randomUUID();
+  const guarantorRecord = {
+    guarantor_active: true,
+    guarantor_source_type: guarantorSource,
+    guarantor_source_account_id: guarantorSourceAccountId || null,
+  } as PrivateBank;
   const { error: e1 } = await supabase.from('private_banks' as any).insert({
     id: bankId,
     name: name.trim(),
@@ -264,9 +269,18 @@ export async function createPrivateBank(input: {
     guarantor_active: true,
     status: 'active',
   } as any);
-  if (e1) throw e1;
-  if (pdhReserve > 0) await adjustBacking('private', bankId, 'PDH', pdhReserve);
-  if (kydReserve > 0) await adjustBacking('private', bankId, 'KYD', kydReserve);
+  if (e1) {
+    await refundGuarantor(guarantorRecord, rateToPdh).catch(() => undefined);
+    throw e1;
+  }
+  try {
+    if (pdhReserve > 0) await adjustBacking('private', bankId, 'PDH', pdhReserve);
+    if (kydReserve > 0) await adjustBacking('private', bankId, 'KYD', kydReserve);
+  } catch (error) {
+    await supabase.from('private_banks' as any).delete().eq('id', bankId);
+    await refundGuarantor(guarantorRecord, rateToPdh).catch(() => undefined);
+    throw error;
+  }
 
   // Crear cuenta principal automáticamente
   const { error: e2 } = await supabase.from('private_bank_accounts' as any).insert({
@@ -275,7 +289,12 @@ export async function createPrivateBank(input: {
     account_number: genAcctNumber('PB-MAIN'),
     type: 'main',
   } as any);
-  if (e2) throw e2;
+  if (e2) {
+    await supabase.from('bank_backings' as any).delete().eq('bank_type', 'private').eq('bank_id', bankId);
+    await supabase.from('private_banks' as any).delete().eq('id', bankId);
+    await refundGuarantor(guarantorRecord, rateToPdh).catch(() => undefined);
+    throw e2;
+  }
 }
 
 export async function deletePrivateBank(bankId: string, rateToPdh: number): Promise<void> {
