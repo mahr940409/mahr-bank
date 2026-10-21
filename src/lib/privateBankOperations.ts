@@ -554,7 +554,8 @@ export async function privateWithdraw(args: {
   const { bankId, fromAccountId, amount, currencyIso, rateToPdh } = args;
   if (amount <= 0) throw new Error('Monto inválido.');
   const acc = await getAccount(fromAccountId);
-  const total = num(acc.balance_real) + num(acc.balance_symbolic);
+  const availableReal = Math.max(0, num(acc.balance_real) - num((acc as any).balance_frozen));
+  const total = availableReal + num(acc.balance_symbolic);
   if (total < amount) throw new Error('Saldo total insuficiente.');
   const bank = await getBank(bankId);
   const feeRate = num(bank.fee_withdrawal) / 100;
@@ -566,6 +567,7 @@ export async function privateWithdraw(args: {
   const symPart = Math.min(num(acc.balance_symbolic), remaining);
   remaining -= symPart;
   const realPart = remaining;
+  if (realPart > availableReal) throw new Error('El saldo real congelado no está disponible para retiro.');
 
   // Todo retiro entrega efectivo físico: debe existir en la bóveda (sin importar si el saldo era real o simbólico)
   const cash = num((bank as any).cash_on_hand);
