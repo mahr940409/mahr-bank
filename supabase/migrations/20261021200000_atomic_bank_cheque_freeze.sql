@@ -9,6 +9,19 @@ ALTER TABLE public.private_bank_accounts
 ALTER TABLE public.bank_main_account
   ADD COLUMN IF NOT EXISTS balance_frozen_pdh numeric NOT NULL DEFAULT 0;
 
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'national_bank_accounts_frozen_lte_real') THEN
+    ALTER TABLE public.national_bank_accounts ADD CONSTRAINT national_bank_accounts_frozen_lte_real CHECK (balance_frozen <= balance_real);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'private_bank_accounts_frozen_lte_real') THEN
+    ALTER TABLE public.private_bank_accounts ADD CONSTRAINT private_bank_accounts_frozen_lte_real CHECK (balance_frozen <= balance_real);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bank_main_account_frozen_lte_pdh') THEN
+    ALTER TABLE public.bank_main_account ADD CONSTRAINT bank_main_account_frozen_lte_pdh CHECK (balance_frozen_pdh <= balance_pdh);
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.issue_bank_cheque(
   p_issuer_bank_type text,
   p_issuer_bank_id text,
@@ -27,6 +40,7 @@ AS $$
 DECLARE
   v_cheque public.cheques;
   v_available numeric;
+  v_source_currency text;
 BEGIN
   IF p_amount IS NULL OR p_amount <= 0 THEN RAISE EXCEPTION 'El monto debe ser mayor que cero'; END IF;
   IF p_issuer_bank_type NOT IN ('national', 'private', 'mahr') THEN RAISE EXCEPTION 'Banco emisor inválido'; END IF;
@@ -40,13 +54,23 @@ BEGIN
     IF v_available IS NULL OR v_available < p_amount THEN RAISE EXCEPTION 'Saldo disponible insuficiente'; END IF;
     UPDATE public.bank_main_account SET balance_frozen_pdh = balance_frozen_pdh + p_amount WHERE id = 'bank-main';
   ELSIF p_issuer_bank_type = 'national' THEN
-    SELECT balance_real - balance_frozen INTO v_available
-      FROM public.national_bank_accounts WHERE id = p_issuer_account_id AND national_bank_id = p_issuer_bank_id FOR UPDATE;
+    SELECT a.balance_real - a.balance_frozen, c.iso_code INTO v_available, v_source_currency
+      FROM public.national_bank_accounts a
+      JOIN public.national_banks nb ON nb.id = a.national_bank_id
+      JOIN public.countries co ON co.id = nb.country_id
+      JOIN public.currencies c ON c.id = co.currency_id
+      WHERE a.id = p_issuer_account_id AND a.national_bank_id = p_issuer_bank_id FOR UPDATE;
+    IF v_source_currency <> p_currency_iso THEN RAISE EXCEPTION 'La moneda no coincide con la cuenta emisora'; END IF;
     IF v_available IS NULL OR v_available < p_amount THEN RAISE EXCEPTION 'Saldo disponible insuficiente'; END IF;
     UPDATE public.national_bank_accounts SET balance_frozen = balance_frozen + p_amount WHERE id = p_issuer_account_id;
   ELSE
-    SELECT balance_real - balance_frozen INTO v_available
-      FROM public.private_bank_accounts WHERE id = p_issuer_account_id AND private_bank_id = p_issuer_bank_id FOR UPDATE;
+    SELECT a.balance_real - a.balance_frozen, c.iso_code INTO v_available, v_source_currency
+      FROM public.private_bank_accounts a
+      JOIN public.private_banks pb ON pb.id = a.private_bank_id
+      JOIN public.countries co ON co.id = pb.country_id
+      JOIN public.currencies c ON c.id = co.currency_id
+      WHERE a.id = p_issuer_account_id AND a.private_bank_id = p_issuer_bank_id FOR UPDATE;
+    IF v_source_currency <> p_currency_iso THEN RAISE EXCEPTION 'La moneda no coincide con la cuenta emisora'; END IF;
     IF v_available IS NULL OR v_available < p_amount THEN RAISE EXCEPTION 'Saldo disponible insuficiente'; END IF;
     UPDATE public.private_bank_accounts SET balance_frozen = balance_frozen + p_amount WHERE id = p_issuer_account_id;
   END IF;
