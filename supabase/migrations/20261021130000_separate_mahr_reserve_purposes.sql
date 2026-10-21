@@ -13,8 +13,12 @@ CREATE TABLE IF NOT EXISTS public.mahr_reserve_custody (
 );
 
 ALTER TABLE public.mahr_reserve_custody ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Authenticated users can read MAHR reserve custody"
+  ON public.mahr_reserve_custody;
 CREATE POLICY "Authenticated users can read MAHR reserve custody"
   ON public.mahr_reserve_custody FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Authenticated users can manage MAHR reserve custody"
+  ON public.mahr_reserve_custody;
 CREATE POLICY "Authenticated users can manage MAHR reserve custody"
   ON public.mahr_reserve_custody FOR ALL TO authenticated USING (true) WITH CHECK (true);
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.mahr_reserve_custody TO authenticated;
