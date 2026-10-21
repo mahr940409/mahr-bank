@@ -47,6 +47,7 @@ export function OperationsDialog({
   const [transferAmount, setTransferAmount] = useState('');
   const [transferCurrency, setTransferCurrency] = useState('PDH');
   const [nationalAccounts, setNationalAccounts] = useState<any[]>([]);
+  const [mainCommittedPdh, setMainCommittedPdh] = useState(0);
 
   useEffect(() => {
     if (open && selectedAccountId) {
@@ -75,6 +76,20 @@ export function OperationsDialog({
         const bankMap = Object.fromEntries((banks.data || []).map((b: any) => [b.id, { label: `${b.name} · ${countryMap[b.country_id]?.name || ''}`, currency: currencyMap[countryMap[b.country_id]?.currency_id] || 'moneda local' }]));
         setNationalAccounts((data as any[]).map(a => ({ ...a, label: `${a.holder_name} · ${bankMap[a.national_bank_id]?.label || 'Banco Nacional'}`, currency: bankMap[a.national_bank_id]?.currency || 'moneda local' })));
       });
+      Promise.all([
+        supabase.from('bank_backings' as any).select('amount, currency_iso').eq('bank_type', 'national'),
+        supabase.from('mahr_reserve_custody' as any).select('amount, currency_iso').eq('reserve_type', 'currency_defense'),
+        supabase.from('bank_main_account' as any).select('balance_frozen_pdh').eq('id', 'bank-main').maybeSingle(),
+        supabase.from('currencies').select('iso_symbol, printed_amount, burned_amount, pdh_reserves, exchange_rate_to_pdh'),
+      ]).then(([backings, custody, main, currencyRows]) => {
+        const rates = Object.fromEntries(((currencyRows.data as any[]) || []).map((c: any) => {
+          const circulation = Math.max(0, Number(c.printed_amount || 0) - Number(c.burned_amount || 0));
+          return [c.iso_symbol, c.iso_symbol === 'PDH' ? 1 : circulation > 0
+            ? Number(c.pdh_reserves || 0) / circulation : Number(c.exchange_rate_to_pdh || 0)];
+        }));
+        const value = (rows: any[]) => rows.reduce((sum, row) => sum + Number(row.amount || 0) * (rates[row.currency_iso] || 0), 0);
+        setMainCommittedPdh(value((backings.data as any[]) || []) + value((custody.data as any[]) || []) + Number((main.data as any)?.balance_frozen_pdh || 0));
+      });
     }
   }, [open]);
 
@@ -92,7 +107,7 @@ export function OperationsDialog({
     // MAHR puede convertir sus recursos físicos entre BDH, LDH y PDH. Por
     // eso el saldo total en PDH equivalentes es la fuente de disponibilidad,
     // aunque todavía no exista un inventario separado por unidad física.
-    const availablePdh = Number((mahrAccount as any)?.balance || 0);
+    const availablePdh = Math.max(0, Number((mahrAccount as any)?.balance || 0) - mainCommittedPdh);
     let remaining = requestedPdh;
     const bdh = Math.min(Math.floor(remaining / 81), Math.floor(availablePdh / 81));
     remaining -= bdh * 81;
@@ -285,7 +300,8 @@ export function OperationsDialog({
                 const settings = getBankSettings();
                 const isBusiness = selectedWithdrawalAccount.type === 'business';
                 const rate = isBusiness ? settings.businessTransferCommission : 0;
-                const availableBalance = Math.max(0, selectedWithdrawalAccount.balance - (selectedWithdrawalAccount.balanceFrozen ?? 0));
+                const committedPdh = selectedWithdrawalAccount.id === 'bank-main' ? mainCommittedPdh : 0;
+                const availableBalance = Math.max(0, selectedWithdrawalAccount.balance - (selectedWithdrawalAccount.balanceFrozen ?? 0) - committedPdh);
                 const maxWithdrawable = availableBalance / (1 + rate);
                 const commission = selectedWithdrawalAccount.balance - maxWithdrawable;
                 const sameCurrency = withdrawalCurrency === selectedWithdrawalAccount.currency;
@@ -297,7 +313,7 @@ export function OperationsDialog({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Saldo congelado:</span>
-                      <span className="font-medium text-amber-600">{formatNumber(selectedWithdrawalAccount.balanceFrozen ?? 0)} {selectedWithdrawalAccount.currency}</span>
+                      <span className="font-medium text-amber-600">{formatNumber((selectedWithdrawalAccount.balanceFrozen ?? 0) + committedPdh)} {selectedWithdrawalAccount.currency}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Disponible sin compromisos:</span>
