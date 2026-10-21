@@ -34,6 +34,7 @@ BEGIN
         AND d.currency_iso = p_currency_iso
         AND abs(d.value - v_item.key::numeric) < 0.000001;
     IF v_denom.id IS NULL THEN RAISE EXCEPTION 'Denominación no emitida por el Banco Nacional'; END IF;
+    v_custody := 0;
     SELECT COALESCE(quantity, 0) INTO v_custody FROM public.banknote_custody
       WHERE bank_type = 'national' AND bank_id = v_source.national_bank_id AND denomination_id = v_denom.id FOR UPDATE;
     IF v_custody < v_count THEN RAISE EXCEPTION 'Billetes insuficientes en la custodia nacional'; END IF;
