@@ -66,10 +66,13 @@ export default function Accounts() {
     () => accounts.reduce((sum, account) => sum + convertToPDH(account.balance, account.currency || 'PDH'), 0),
     [accounts],
   );
-  // The main account is the single accounting source for MAHR's gross treasury.
-  // Currency and international backings are already reflected in this balance;
-  // adding them again would double-count the same custody.
-  const grossMahrCustodyPdh = Number(bankMainAccount?.balance || 0);
+  // The main account includes operational and international-transaction custody.
+  // Currency-defense custody is a separate physical reserve and must be added
+  // to gross assets even when it is committed and not freely available.
+  const grossMahrCustodyPdh = Number(bankMainAccount?.balance || 0) + mahrCustody.currencyDefensePdh;
+  const committedMahrReservesPdh = mahrCustody.currencyDefensePdh + mahrCustody.internationalPdh;
+  const totalCommittedPdh = committedUsersPdh + committedMahrReservesPdh;
+  const availableAfterCommitmentsPdh = Math.max(0, grossMahrCustodyPdh - totalCommittedPdh);
 
   if (loading) {
     return (
@@ -104,7 +107,7 @@ export default function Accounts() {
               <Building2 className="h-5 w-5 text-accent" />
               <CardTitle>Cuenta del Banco</CardTitle>
             </div>
-            <CardDescription>Cuenta principal de MAHR Bank — disponible para operaciones</CardDescription>
+            <CardDescription>Cuenta principal de MAHR Bank — saldo contable y reservas custodiadas</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -118,6 +121,8 @@ export default function Accounts() {
                   createdAt: new Date(),
                   currency: 'PDH',
                 }}
+                availableForWithdrawal={availableAfterCommitmentsPdh}
+                withdrawalRestriction={availableAfterCommitmentsPdh <= 0 ? 'El saldo está comprometido como reserva.' : undefined}
                 onClick={() => navigate(`/accounts/${bankMainAccount.id}`)}
               />
               <div className="md:col-span-2 rounded-lg border bg-muted/30 p-4 grid gap-3 sm:grid-cols-2">
@@ -126,8 +131,8 @@ export default function Accounts() {
               </div>
               <div className="md:col-span-3 rounded-lg border border-primary/30 bg-primary/5 p-4 grid gap-3 sm:grid-cols-3">
                 <div><p className="text-sm text-muted-foreground">Arcas brutas registradas</p><p className="text-xl font-semibold">{formatNumber(grossMahrCustodyPdh)} PDH</p><p className="text-xs text-muted-foreground">Saldo contable consolidado de MAHR Bank</p></div>
-                <div><p className="text-sm text-muted-foreground">Comprometido en cuentas de usuarios</p><p className="text-xl font-semibold">{formatNumber(committedUsersPdh)} PDH</p></div>
-                <div><p className="text-sm text-muted-foreground">Disponible después de compromisos</p><p className="text-xl font-semibold">{formatNumber(Math.max(0, grossMahrCustodyPdh - committedUsersPdh))} PDH</p></div>
+                <div><p className="text-sm text-muted-foreground">Comprometido total</p><p className="text-xl font-semibold">{formatNumber(totalCommittedPdh)} PDH</p><p className="text-xs text-muted-foreground">Reservas: {formatNumber(committedMahrReservesPdh)} · Usuarios: {formatNumber(committedUsersPdh)}</p></div>
+                <div><p className="text-sm text-muted-foreground">Disponible después de compromisos</p><p className="text-xl font-semibold">{formatNumber(availableAfterCommitmentsPdh)} PDH</p></div>
               </div>
             </div>
           </CardContent>

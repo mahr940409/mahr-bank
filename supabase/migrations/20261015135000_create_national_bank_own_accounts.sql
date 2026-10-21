@@ -1,3 +1,7 @@
+-- This migration runs before the later bundle migration by timestamp.
+ALTER TABLE public.banknote_denominations
+  ADD COLUMN IF NOT EXISTS bundles_withdrawn integer NOT NULL DEFAULT 0;
+
 -- Create the operational treasury account for national banks created before this feature.
 INSERT INTO public.national_bank_accounts
   (national_bank_id, account_number, holder_name, account_type, balance_real, balance_symbolic, status)

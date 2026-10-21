@@ -11,12 +11,14 @@ import { getBankSettings } from '@/hooks/useBankSettings';
 
 interface AccountCardProps {
   account: Account;
+  availableForWithdrawal?: number;
+  withdrawalRestriction?: string;
   onClick?: () => void;
   onEditName?: (accountId: string, newName: string) => void;
   onDelete?: (accountId: string) => void;
 }
 
-export function AccountCard({ account, onClick, onEditName, onDelete }: AccountCardProps) {
+export function AccountCard({ account, availableForWithdrawal, withdrawalRestriction, onClick, onEditName, onDelete }: AccountCardProps) {
   const isMainBank = account.id === 'bank-main';
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(account.userName);
@@ -154,7 +156,8 @@ export function AccountCard({ account, onClick, onEditName, onDelete }: AccountC
               const isBusiness = account.type === 'business';
               const rate = isBusiness ? settings.businessTransferCommission : 0;
               // Máximo retirable considerando comisión: balance / (1 + rate)
-              const maxWithdrawable = account.balance / (1 + rate);
+              const grossAvailable = availableForWithdrawal ?? account.balance;
+              const maxWithdrawable = grossAvailable / (1 + rate);
               const commission = account.balance - maxWithdrawable;
               return (
                 <div className="space-y-2 text-xs">
@@ -162,14 +165,15 @@ export function AccountCard({ account, onClick, onEditName, onDelete }: AccountC
                     <span className="text-muted-foreground">Saldo total:</span>
                     <span className="font-medium">{formatNumber(account.balance)} {account.currency}</span>
                   </div>
-                  <div className="flex justify-between">
+                  {availableForWithdrawal === undefined && <div className="flex justify-between">
                     <span className="text-muted-foreground">Comisión ({(rate * 100).toFixed(1)}%):</span>
                     <span className="font-medium">{formatNumber(commission)} {account.currency}</span>
-                  </div>
+                  </div>}
                   <div className="flex justify-between border-t pt-2">
                     <span className="font-semibold">Máx. a retirar:</span>
                     <span className="font-bold text-primary">{formatNumber(maxWithdrawable)} {account.currency}</span>
                   </div>
+                  {withdrawalRestriction && <div className="text-muted-foreground pt-1 border-t">{withdrawalRestriction}</div>}
                   {!isMainBank && (
                     <div className="text-muted-foreground pt-1 border-t">
                       Cuota mensual: {formatNumber(account.monthlyFee)} PDH

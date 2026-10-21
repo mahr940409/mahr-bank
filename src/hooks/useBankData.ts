@@ -282,6 +282,33 @@ export function useBankData() {
       : accounts.find((acc) => acc.id === accountId);
     
     if (!account) return;
+
+    if (accountId === 'bank-main') {
+      // The main balance also contains international transaction backing.
+      // It must remain locked and cannot be withdrawn as free MAHR liquidity.
+      const [{ data: backingRows, error: backingError }, { data: currencyRows, error: currencyError }] = await Promise.all([
+        supabase.from('bank_backings' as any).select('amount, currency_iso').eq('bank_type', 'national'),
+        supabase.from('currencies').select('iso_symbol, exchange_rate_to_pdh, pdh_reserves, printed_amount, burned_amount'),
+      ]);
+      if (backingError || currencyError) {
+        toast({ title: 'Retiro bloqueado', description: 'No se pudo verificar el respaldo comprometido de MAHR Bank.', variant: 'destructive' });
+        return;
+      }
+      const rates = Object.fromEntries(((currencyRows as any[]) || []).map((row: any) => {
+        const circulation = Math.max(0, Number(row.printed_amount || 0) - Number(row.burned_amount || 0));
+        const rate = row.iso_symbol === 'PDH' ? 1 : (circulation > 0 ? Number(row.pdh_reserves || 0) / circulation : Number(row.exchange_rate_to_pdh || 0));
+        return [row.iso_symbol, rate];
+      }));
+      const committedInternationalPdh = ((backingRows as any[]) || []).reduce(
+        (sum, row) => sum + Number(row.amount || 0) * (rates[row.currency_iso] || 0), 0,
+      );
+      const requestedPdh = convertToPDH(amount, currency);
+      const freeMainPdh = Math.max(0, bankMainAccount.balance - committedInternationalPdh);
+      if (requestedPdh > freeMainPdh + 1e-9) {
+        toast({ title: 'Retiro no disponible', description: `La cuenta principal tiene ${committedInternationalPdh.toFixed(2)} PDH comprometidos como respaldo internacional. Disponible libre: ${freeMainPdh.toFixed(2)} PDH.`, variant: 'destructive' });
+        return;
+      }
+    }
     
     const result = processWithdrawal(account, amount, currency);
     

@@ -25,6 +25,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { loadExchangeRates } from '@/lib/currencyUtils';
 import { formatNumber } from '@/lib/currencyUtils';
 
+const formatParity = (value: number) => {
+  if (!Number.isFinite(value)) return '—';
+  const decimals = value !== 0 && Math.abs(value) < 0.01 ? 6 : 2;
+  return value.toLocaleString('es-CO', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+};
+
 export default function Countries() {
   const {
     currencies, countries, loading,
@@ -304,9 +310,9 @@ export default function Countries() {
                     <Badge variant="outline">{cur.iso_symbol}</Badge>
                   </TableCell>
                   <TableCell>
-                    <div>{formatNumber(cur.exchange_rate_to_pdh)} PDH</div>
+                    <div>{formatParity(Number(cur.exchange_rate_to_pdh))} PDH</div>
                     <div className="text-xs text-muted-foreground">
-                      1 PDH = {cur.exchange_rate_to_pdh > 0 ? formatNumber(1 / cur.exchange_rate_to_pdh) : '—'} {cur.iso_symbol}
+                      1 PDH = {cur.exchange_rate_to_pdh > 0 ? formatParity(1 / cur.exchange_rate_to_pdh) : '—'} {cur.iso_symbol}
                     </div>
                   </TableCell>
                   <TableCell>

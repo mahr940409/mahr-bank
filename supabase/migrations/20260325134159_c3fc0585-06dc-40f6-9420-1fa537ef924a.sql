@@ -43,9 +43,9 @@ CREATE TRIGGER update_countries_updated_at
 -- Seed existing currencies
 INSERT INTO public.currencies (id, name, iso_symbol, exchange_rate_to_pdh, is_fixed_rate) VALUES
   ('cur-pdh', 'Peso Digital Híbrido', 'PDH', 1, true),
-  ('cur-bdh', 'Bolívar Digital Híbrido', 'BDH', 81, false),
-  ('cur-ldh', 'Lira Digital Híbrido', 'LDH', 9, false),
-  ('cur-kyd', 'Dólar de las Islas Caimán', 'KYD', 1, true);
+  ('cur-bdh', 'Bolívar Digital Híbrido', 'BDH', 81, true),
+  ('cur-ldh', 'Lira Digital Híbrido', 'LDH', 9, true),
+  ('cur-kyd', 'Dólar de las Islas Caimán', 'KYD', 1, false);
 
 -- Seed Cayman Islands
 INSERT INTO public.countries (id, name, currency_id) VALUES

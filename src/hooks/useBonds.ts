@@ -3,7 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   StateBond, BondHolding,
   createBond, deleteBond, setBondStatus, buyBond,
-  processCoupons, repurchaseHolding,
+  processCoupons, repurchaseHolding, publishBondForSale, executeBondMarketOrder,
+  cancelBondMarketOrder, updateBondMarketOrderPrice,
 } from '@/lib/bondOperations';
 
 export function useBonds() {
@@ -32,5 +33,9 @@ export function useBonds() {
     buyBond: async (args: Parameters<typeof buyBond>[0]) => { await buyBond(args); await load(); },
     processCoupons: async (bankId?: string) => { const r = await processCoupons(bankId); await load(); return r; },
     repurchaseHolding: async (id: string) => { await repurchaseHolding(id); await load(); },
+    publishBondForSale: async (args: Parameters<typeof publishBondForSale>[0]) => { await publishBondForSale(args); await load(); },
+    executeBondMarketOrder: async (orderId: string, buyerAccountId: string) => { await executeBondMarketOrder(orderId, buyerAccountId); await load(); },
+    cancelBondMarketOrder: async (orderId: string, sellerAccountId: string) => { await cancelBondMarketOrder(orderId, sellerAccountId); await load(); },
+    updateBondMarketOrderPrice: async (orderId: string, sellerAccountId: string, total: number, units: number) => { await updateBondMarketOrderPrice(orderId, sellerAccountId, total, units); await load(); },
   };
 }
