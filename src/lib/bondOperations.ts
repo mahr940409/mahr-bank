@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { getRateToPdh, spendBackingPdh } from '@/lib/backingOperations';
+import { getRateToPdh } from '@/lib/backingOperations';
 
 export interface StateBond {
   id: string;
@@ -36,8 +36,6 @@ export interface BondHolding {
 
 const num = (v: any) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const transactionId = () => `TXN-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 // denom -> PDH equivalent
 // For mode 'kyd' pass the KYD rate as rateToPdh (KYD is variable, not 1:1).
@@ -181,46 +179,6 @@ export async function processCoupons(nationalBankId?: string): Promise<{ paid: n
  * Bank repurchases (forces refund) a holding early. Returns principal + any due coupons.
  */
 export async function repurchaseHolding(holdingId: string): Promise<void> {
-  const { data: h } = await supabase.from('bond_holdings').select('*').eq('id', holdingId).maybeSingle();
-  if (!h) throw new Error('Tenencia no encontrada.');
-  if (h.status !== 'active') throw new Error('Tenencia no activa.');
-
-  const { data: bond } = await supabase.from('state_bonds').select('*').eq('id', h.bond_id).maybeSingle();
-  if (!bond) throw new Error('Bono no encontrado.');
-  const { data: bank } = await supabase.from('national_banks').select('*').eq('id', bond.national_bank_id).maybeSingle();
-  if (!bank) throw new Error('Banco no encontrado.');
-  const { data: acc } = await supabase.from('accounts').select('*').eq('id', h.account_id).maybeSingle();
-  if (!acc) throw new Error('Cuenta inversor no encontrada.');
-
-  // due coupons up to now
-  const now = Date.now();
-  const lastCoupon = new Date(h.last_coupon_at).getTime();
-  const WEEK = WEEK_MS;
-  const weeksDue = Math.max(0, Math.floor((now - lastCoupon) / WEEK));
-  const weeklyRate = num(bond.annual_rate) / 52;
-  const dueCoupons = num(h.principal_pdh) * weeklyRate * weeksDue;
-  const totalOut = num(h.principal_pdh) + dueCoupons;
-
-  await spendBackingPdh('national', bank.id, totalOut);
-  const { error: accountError } = await supabase.from('accounts').update({ balance_pdh: num(acc.balance_pdh) + totalOut } as any).eq('id', acc.id);
-  if (accountError) throw accountError;
-
-  const { error: holdingError } = await supabase.from('bond_holdings').update({
-    status: 'repurchased',
-    coupons_paid: h.coupons_paid + weeksDue,
-    total_interest_pdh: num(h.total_interest_pdh) + dueCoupons,
-    last_coupon_at: new Date(now).toISOString(),
-  } as any).eq('id', holdingId);
-  if (holdingError) throw holdingError;
-
-  const { error: liquidationError } = await supabase.from('transactions').insert({
-    id: transactionId(),
-    transaction_type: 'cdt_liquidation',
-    to_account_id: acc.id,
-    to_account_number: acc.account_number,
-    amount: totalOut,
-    currency: 'PDH',
-    description: `Recompra anticipada de bono "${bond.name}" (capital + ${weeksDue} cupón pendiente)`,
-  } as any);
-  if (liquidationError) throw liquidationError;
+  const { error } = await supabase.rpc('repurchase_bond_atomic' as any, { p_holding_id: holdingId } as any);
+  if (error) throw error;
 }
