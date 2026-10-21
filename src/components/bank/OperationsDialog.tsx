@@ -285,14 +285,23 @@ export function OperationsDialog({
                 const settings = getBankSettings();
                 const isBusiness = selectedWithdrawalAccount.type === 'business';
                 const rate = isBusiness ? settings.businessTransferCommission : 0;
-                const maxWithdrawable = selectedWithdrawalAccount.balance / (1 + rate);
+                const availableBalance = Math.max(0, selectedWithdrawalAccount.balance - (selectedWithdrawalAccount.balanceFrozen ?? 0));
+                const maxWithdrawable = availableBalance / (1 + rate);
                 const commission = selectedWithdrawalAccount.balance - maxWithdrawable;
                 const sameCurrency = withdrawalCurrency === selectedWithdrawalAccount.currency;
                 return (
                   <div className="rounded-md border p-3 space-y-2 text-xs bg-muted/30">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Saldo:</span>
-                      <span className="font-medium">{formatNumber(selectedWithdrawalAccount.balance)} {selectedWithdrawalAccount.currency}</span>
+                        <span className="font-medium">{formatNumber(selectedWithdrawalAccount.balance)} {selectedWithdrawalAccount.currency}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Saldo congelado:</span>
+                      <span className="font-medium text-amber-600">{formatNumber(selectedWithdrawalAccount.balanceFrozen ?? 0)} {selectedWithdrawalAccount.currency}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Disponible sin compromisos:</span>
+                      <span className="font-semibold">{formatNumber(Math.max(0, selectedWithdrawalAccount.balance - (selectedWithdrawalAccount.balanceFrozen ?? 0)))} {selectedWithdrawalAccount.currency}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Comisión ({(rate * 100).toFixed(1)}%):</span>
