@@ -37,6 +37,7 @@ export interface BondHolding {
 const num = (v: any) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const transactionId = () => `TXN-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 // denom -> PDH equivalent
 // For mode 'kyd' pass the KYD rate as rateToPdh (KYD is variable, not 1:1).
@@ -167,7 +168,8 @@ export async function buyBond(args: {
 
   // Log MAHR transaction
   await supabase.from('transactions').insert({
-    type: 'cdt_creation',
+    id: transactionId(),
+    transaction_type: 'cdt_creation',
     from_account_id: accountId,
     from_account_number: acc.account_number,
     amount: principalPdh,
@@ -271,7 +273,8 @@ export async function processCoupons(nationalBankId?: string): Promise<{ paid: n
       } as any).eq('id', h.account_id);
 
       await supabase.from('transactions').insert({
-        type: 'cdt_interest_payout',
+        id: transactionId(),
+        transaction_type: 'cdt_interest_payout',
         to_account_id: h.account_id,
         to_account_number: acc.account_number,
         amount: totalToBuyer,
@@ -333,7 +336,8 @@ export async function repurchaseHolding(holdingId: string): Promise<void> {
   } as any).eq('id', holdingId);
 
   await supabase.from('transactions').insert({
-    type: 'cdt_liquidation',
+    id: transactionId(),
+    transaction_type: 'cdt_liquidation',
     to_account_id: acc.id,
     to_account_number: acc.account_number,
     amount: totalOut,
