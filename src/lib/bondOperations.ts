@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { getRateToPdh, spendBackingPdh, availableBackingPdh } from '@/lib/backingOperations';
+import { getRateToPdh, spendBackingPdh } from '@/lib/backingOperations';
 
 export interface StateBond {
   id: string;
@@ -165,83 +165,13 @@ export async function processCoupons(nationalBankId?: string): Promise<{ paid: n
   if (nationalBankId) q = q.eq('state_bonds.national_bank_id', nationalBankId);
   const { data: holdings } = await q;
   if (!holdings) return { paid: 0, total: 0 };
-
-  const now = Date.now();
   let paid = 0;
   let totalPdh = 0;
-
   for (const h of holdings as any[]) {
-    const bond = h.state_bonds;
-    if (!bond) continue;
-    const lastCoupon = new Date(h.last_coupon_at).getTime();
-    const weeksDue = Math.floor((now - lastCoupon) / WEEK_MS);
-    if (weeksDue <= 0) continue;
-
-    const weeklyRate = num(bond.annual_rate) / 52;
-    const couponPdh = num(h.principal_pdh) * weeklyRate;
-    let weeksToPay = weeksDue;
-
-    // Maturity check
-    const maturity = new Date(h.maturity_at).getTime();
-    const isMatured = now >= maturity;
-
-    let available = await availableBackingPdh('national', bond.national_bank_id);
-    let paidWeeks = 0;
-    let paidPdhTotal = 0;
-    for (let i = 0; i < weeksToPay; i++) {
-      if (available >= couponPdh) { available -= couponPdh; paidPdhTotal += couponPdh; paidWeeks++; }
-      else break;
-    }
-
-    if (paidWeeks === 0 && !isMatured) continue;
-
-    // Get buyer account
-    const { data: acc } = await supabase.from('accounts').select('*').eq('id', h.account_id).maybeSingle();
-    if (!acc) continue;
-
-    let principalReturn = 0;
-    let newStatus = h.status;
-    if (isMatured && available >= num(h.principal_pdh)) {
-      principalReturn = num(h.principal_pdh);
-      newStatus = 'matured';
-    }
-
-    await spendBackingPdh('national', bond.national_bank_id, paidPdhTotal + principalReturn);
-
-    // Pay buyer
-    const totalToBuyer = paidPdhTotal + principalReturn;
-    if (totalToBuyer > 0) {
-      const { error: accountError } = await supabase.from('accounts').update({
-        balance_pdh: num(acc.balance_pdh) + totalToBuyer,
-      } as any).eq('id', h.account_id);
-      if (accountError) throw accountError;
-
-      const { error: payoutError } = await supabase.from('transactions').insert({
-        id: transactionId(),
-        transaction_type: 'cdt_interest_payout',
-        to_account_id: h.account_id,
-        to_account_number: acc.account_number,
-        amount: totalToBuyer,
-        currency: 'PDH',
-        description: principalReturn > 0
-          ? `Bono "${bond.name}" vencido: ${paidWeeks} cupón(es) + capital`
-          : `Cupón bono "${bond.name}" (${paidWeeks} semana(s))`,
-      } as any);
-      if (payoutError) throw payoutError;
-    }
-
-    // Update holding
-    const newLast = new Date(lastCoupon + paidWeeks * WEEK_MS).toISOString();
-    const { error: holdingError } = await supabase.from('bond_holdings').update({
-      last_coupon_at: newLast,
-      coupons_paid: h.coupons_paid + paidWeeks,
-      total_interest_pdh: num(h.total_interest_pdh) + paidPdhTotal,
-      status: newStatus,
-    } as any).eq('id', h.id);
-    if (holdingError) throw holdingError;
-
-    paid += paidWeeks;
-    totalPdh += paidPdhTotal + principalReturn;
+    const { data, error } = await supabase.rpc('process_bond_coupon_atomic' as any, { p_holding_id: h.id } as any);
+    if (error) throw error;
+    paid += Number((data as any)?.paid || 0);
+    totalPdh += Number((data as any)?.total || 0);
   }
 
   return { paid, total: totalPdh };
