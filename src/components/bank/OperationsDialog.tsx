@@ -303,7 +303,7 @@ export function OperationsDialog({
                 const committedPdh = selectedWithdrawalAccount.id === 'bank-main' ? mainCommittedPdh : 0;
                 const availableBalance = Math.max(0, selectedWithdrawalAccount.balance - (selectedWithdrawalAccount.balanceFrozen ?? 0) - committedPdh);
                 const maxWithdrawable = availableBalance / (1 + rate);
-                const commission = selectedWithdrawalAccount.balance - maxWithdrawable;
+                const commission = maxWithdrawable * rate;
                 const sameCurrency = withdrawalCurrency === selectedWithdrawalAccount.currency;
                 return (
                   <div className="rounded-md border p-3 space-y-2 text-xs bg-muted/30">
@@ -317,7 +317,7 @@ export function OperationsDialog({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Disponible sin compromisos:</span>
-                      <span className="font-semibold">{formatNumber(Math.max(0, selectedWithdrawalAccount.balance - (selectedWithdrawalAccount.balanceFrozen ?? 0)))} {selectedWithdrawalAccount.currency}</span>
+                      <span className="font-semibold">{formatNumber(availableBalance)} {selectedWithdrawalAccount.currency}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Comisión ({(rate * 100).toFixed(1)}%):</span>
