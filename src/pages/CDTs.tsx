@@ -142,7 +142,8 @@ export default function CDTs() {
       if (cdtError) {
         console.error('Error inserting CDT:', cdtError);
         // Rollback account balance
-        await supabase.from('accounts').update({ balance_pdh: account.balance } as any).eq('id', accountId);
+        const { error: rollbackError } = await supabase.from('accounts').update({ balance_pdh: account.balance } as any).eq('id', accountId);
+        if (rollbackError) console.error('Error rolling back account balance:', rollbackError);
         throw new Error(`Error al crear CDT: ${cdtError.message}`);
       }
 
@@ -151,7 +152,7 @@ export default function CDTs() {
         ? `Creación CDT Indefinido al ${(rate * 100).toFixed(1)}% anual (pago ${FREQUENCY_LABELS[frequency].toLowerCase()})`
         : `Creación CDT - ${termWeeks} semanas al ${(rate * 100).toFixed(1)}% anual`;
 
-      await supabase.from('transactions').insert({
+      const { error: transactionError } = await supabase.from('transactions').insert({
         id: generateTxId(),
         transaction_type: 'cdt_creation',
         from_account_id: accountId,
@@ -160,6 +161,7 @@ export default function CDTs() {
         currency,
         description: desc,
       });
+      if (transactionError) throw new Error(`Error al registrar CDT: ${transactionError.message}`);
 
       toast.success('CDT creado exitosamente');
       loadCDTs();
@@ -214,7 +216,7 @@ export default function CDTs() {
       }
 
       // 3. Record transaction
-      await supabase.from('transactions').insert({
+      const { error: transactionError } = await supabase.from('transactions').insert({
         id: generateTxId(),
         transaction_type: early ? 'cdt_early_withdrawal' : 'cdt_maturity',
         to_account_id: cdt.accountId,
@@ -223,6 +225,7 @@ export default function CDTs() {
         currency: cdt.currency,
         description: descriptionText,
       });
+      if (transactionError) throw new Error(`Error al registrar liquidación del CDT: ${transactionError.message}`);
 
       const successMsg = cdt.isIndefinite
         ? `CDT cancelado. Devuelto: ${formatNumber(returnAmount)} ${cdt.currency}`
