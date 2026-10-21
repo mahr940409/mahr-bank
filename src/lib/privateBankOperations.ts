@@ -579,35 +579,22 @@ export async function privateWithdraw(args: {
   if (heldValue < netOut && !['PDH', 'LDH', 'BDH'].includes(currencyIso)) {
     throw new Error(`Los billetes físicos registrados (${heldValue.toFixed(2)} ${currencyIso}) no cubren este retiro.`);
   }
-  const { error: cashUpdateError } = await supabase.from('private_banks' as any)
-    .update({ cash_on_hand: cash - netOut } as any).eq('id', bankId);
-  if (cashUpdateError) throw cashUpdateError;
-
-  // Liberar reserva simbólica (regresa al banco privado)
+  let backingCurrency: string | null = null;
+  let backingUnits = 0;
   if (symPart > 0) {
     const equivPdh = symPart * (rateToPdh || 1);
-    const backingCurrency = (acc as any).symbolic_backing_currency || 'PDH';
+    backingCurrency = (acc as any).symbolic_backing_currency || 'PDH';
     const backingRate = backingCurrency === 'PDH' ? 1 : await getRateToPdh(backingCurrency);
-    await adjustBacking('private', bankId, backingCurrency, equivPdh / (backingRate || 1));
+    backingUnits = equivPdh / (backingRate || 1);
   }
 
-
-  const { error: accountDebitError } = await supabase.from('private_bank_accounts' as any).update({
-    balance_real: num(acc.balance_real) - realPart,
-    balance_symbolic: num(acc.balance_symbolic) - symPart,
-  } as any).eq('id', fromAccountId);
-  if (accountDebitError) throw accountDebitError;
-
-  await creditFeeToMain(bankId, fee);
-
-  await logTx({
-    private_bank_id: bankId,
-    type: 'withdrawal',
-    from_account_id: fromAccountId,
-    to_account_id: args.destinationNationalAccountId || null,
-    amount, fee, money_source: symPart > 0 ? 'symbolic' : 'printed', currency_iso: currencyIso,
-    description: `Retiro ${amount.toFixed(2)} ${currencyIso} (real ${realPart.toFixed(2)}, simb ${symPart.toFixed(2)}, fee ${fee.toFixed(2)})`,
-  });
+  const { error: atomicError } = await supabase.rpc('withdraw_private_account_atomic' as any, {
+    p_bank_id: bankId, p_account_id: fromAccountId, p_amount: amount, p_fee: fee,
+    p_currency_iso: currencyIso, p_real_part: realPart, p_symbolic_part: symPart,
+    p_backing_currency: backingCurrency, p_backing_units: backingUnits,
+    p_destination_account_id: args.destinationNationalAccountId || null,
+  } as any);
+  if (atomicError) throw atomicError;
 
   await syncGuarantor(bankId, rateToPdh);
 }
