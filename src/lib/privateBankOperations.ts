@@ -508,13 +508,31 @@ export async function privateDeposit(args: {
     for (const [value, countRaw] of Object.entries(args.denominationBreakdown)) {
       const denomination = (denominations as any[] || []).find(d => Math.abs(Number(d.value) - Number(value)) < 0.000001);
       if (denomination) {
+        const count = Math.floor(Number(countRaw));
+        const { data: nationalHeld, error: nationalHeldError } = await supabase.from('banknote_custody' as any)
+          .select('quantity').eq('bank_type', 'national').eq('bank_id', sourceNational.national_bank_id).eq('denomination_id', denomination.id).maybeSingle();
+        if (nationalHeldError) throw nationalHeldError;
+        if (Number(nationalHeld?.quantity || 0) < count) {
+          throw new Error(`El Banco Nacional no tiene suficientes billetes de ${value} para transferir.`);
+        }
+        const { data: movedNational, error: nationalMoveError } = await supabase.from('banknote_custody' as any)
+          .update({ quantity: Number(nationalHeld.quantity) - count, updated_at: new Date().toISOString() } as any)
+          .eq('bank_type', 'national').eq('bank_id', sourceNational.national_bank_id).eq('denomination_id', denomination.id)
+          .gte('quantity', count).select('id').maybeSingle();
+        if (nationalMoveError) throw nationalMoveError;
+        if (!movedNational) throw new Error('La custodia nacional cambió antes de mover los billetes. Inténtalo de nuevo.');
         const { data: current } = await supabase.from('banknote_custody' as any)
           .select('quantity').eq('bank_type', 'private').eq('bank_id', bankId).eq('denomination_id', denomination.id).maybeSingle();
         const { error: custodyError } = await supabase.from('banknote_custody' as any).upsert({
           bank_type: 'private', bank_id: bankId, denomination_id: denomination.id,
-          quantity: Number(current?.quantity || 0) + Math.floor(Number(countRaw)), updated_at: new Date().toISOString(),
+          quantity: Number(current?.quantity || 0) + count, updated_at: new Date().toISOString(),
         } as any, { onConflict: 'bank_type,bank_id,denomination_id' });
-        if (custodyError) throw custodyError;
+        if (custodyError) {
+          await supabase.from('banknote_custody' as any)
+            .update({ quantity: Number(nationalHeld.quantity), updated_at: new Date().toISOString() } as any)
+            .eq('bank_type', 'national').eq('bank_id', sourceNational.national_bank_id).eq('denomination_id', denomination.id);
+          throw custodyError;
+        }
       }
     }
     // Transferencia desde el banco nacional: no es efectivo, no entra a la bóveda.
