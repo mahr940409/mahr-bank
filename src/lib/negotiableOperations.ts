@@ -37,26 +37,20 @@ export async function issueCheque(input: {
 }
 
 export async function presentPersonalCheque(chequeId: string, payingBankId: string) {
-  const { data: cheque, error } = await supabase.from('cheques' as any).select('*').eq('id', chequeId).single();
-  if (error || !cheque) throw error || new Error('Cheque no encontrado.');
-  if (cheque.cheque_type !== 'personal') throw new Error('Los cheques bancarios se liquidan entre bancos.');
-  if (cheque.status !== 'issued') throw new Error('El cheque no está disponible para cobro.');
-  if (!cheque.issuer_account_id) throw new Error('Cheque personal sin cuenta emisora.');
-  const { data: account } = await supabase.from('accounts').select('balance_pdh').eq('id', cheque.issuer_account_id).single();
-  if (!account || Number(account.balance_pdh) < Number(cheque.amount)) {
-    await supabase.from('cheques' as any).update({ status: 'rejected', presented_at: new Date().toISOString() }).eq('id', chequeId);
-    throw new Error('Cheque rechazado: saldo insuficiente.');
-  }
-  const { error: debitError } = await supabase.from('accounts').update({ balance_pdh: Number(account.balance_pdh) - Number(cheque.amount) }).eq('id', cheque.issuer_account_id);
-  if (debitError) throw debitError;
-  const { error: paidError } = await supabase.from('cheques' as any).update({ status: 'paid', presented_at: new Date().toISOString(), paid_at: new Date().toISOString(), frozen_amount: 0 }).eq('id', chequeId);
-  if (paidError) throw paidError;
-  return { ...cheque, status: 'paid', paying_bank_id: payingBankId };
+  const { data, error } = await supabase.rpc('present_personal_cheque' as any, { p_cheque_id: chequeId, p_paying_bank_id: payingBankId } as any);
+  if (error) throw error;
+  return data;
 }
 
 export async function cancelCheque(chequeId: string) {
   const { error } = await supabase.from('cheques' as any).update({ status: 'cancelled', frozen_amount: 0 }).eq('id', chequeId).eq('status', 'issued');
   if (error) throw error;
+}
+
+export async function payPromissoryNote(noteId: string) {
+  const { data, error } = await supabase.rpc('pay_promissory_note' as any, { p_note_id: noteId } as any);
+  if (error) throw error;
+  return data;
 }
 
 export async function issuePromissoryNote(input: {
