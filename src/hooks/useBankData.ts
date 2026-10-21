@@ -330,7 +330,31 @@ export function useBankData() {
       return;
     }
     
-    const tableName = accountId === 'bank-main' ? 'bank_main_account' : 'accounts';
+    if (accountId === 'bank-main') {
+      const deductedPdh = account.balance - result.updatedAccount.balance;
+      const { error: withdrawalError } = await supabase.rpc('withdraw_mahr_main_account' as any, {
+        p_amount_pdh: deductedPdh,
+      } as any);
+      if (withdrawalError) {
+        toast({ title: 'Retiro bloqueado', description: withdrawalError.message, variant: 'destructive' });
+        return;
+      }
+      const txnId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      await supabase.from('transactions').insert({
+        id: txnId,
+        transaction_type: result.transaction.type,
+        from_account_id: result.transaction.fromAccountId,
+        from_account_number: result.transaction.fromAccountNumber,
+        amount: result.transaction.amount,
+        currency: result.transaction.currency,
+        description: result.transaction.description,
+      });
+      await loadAllData();
+      toast({ title: 'Retiro realizado', description: `Retiro de ${amount.toFixed(2)} ${currency} realizado exitosamente.` });
+      return;
+    }
+
+    const tableName = 'accounts';
     const { error } = await supabase
       .from(tableName as any)
       .update({
