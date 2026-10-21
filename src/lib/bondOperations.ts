@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { adjustBacking, getRateToPdh, spendBackingPdh, availableBackingPdh } from '@/lib/backingOperations';
+import { getRateToPdh, spendBackingPdh, availableBackingPdh } from '@/lib/backingOperations';
 
 export interface StateBond {
   id: string;
@@ -119,64 +119,6 @@ export async function buyBond(args: {
   if (orderError || !order) throw orderError || new Error('No se pudo crear la orden.');
   const { error: settleError } = await supabase.rpc('settle_bond_purchase_order' as any, { p_order_id: order.id } as any);
   if (settleError) throw settleError;
-  return;
-
-  const { data: bond } = await supabase.from('state_bonds').select('*').eq('id', bondId).maybeSingle();
-  if (!bond) throw new Error('Bono no encontrado.');
-  if (bond.status !== 'active') throw new Error('Bono no disponible.');
-  if (num(bond.available_units) < units) throw new Error('No hay suficientes unidades disponibles.');
-
-  const principalDenom = units * num(bond.unit_price);
-  const kydRate = bond.denom_mode === 'kyd' ? await getRateToPdh('KYD') : 0;
-  const principalPdh = denomToPdh(principalDenom, bond.denom_mode as any, bond.denom_mode === 'kyd' ? kydRate : rateToPdh);
-
-  // Validate buyer account: must be MAHR account (in `accounts` table, not national)
-  const { data: acc } = await supabase.from('accounts').select('*').eq('id', accountId).maybeSingle();
-  if (!acc) throw new Error('Cuenta MAHR no encontrada.');
-  if (num(acc.balance_pdh) < principalPdh) {
-    throw new Error(`Saldo PDH insuficiente. Requerido: ${principalPdh.toFixed(2)} PDH.`);
-  }
-
-  // Debit buyer
-  const { error: e1 } = await supabase.from('accounts')
-    .update({ balance_pdh: num(acc.balance_pdh) - principalPdh } as any).eq('id', accountId);
-  if (e1) throw e1;
-
-  // Credit bank reserve
-  const { data: bank } = await supabase.from('national_banks').select('*').eq('id', bond.national_bank_id).maybeSingle();
-  if (!bank) throw new Error('Banco emisor no encontrado.');
-  if (bond.denom_mode === 'kyd') await adjustBacking('national', bond.national_bank_id, 'KYD', principalPdh / kydRate);
-  else await adjustBacking('national', bond.national_bank_id, 'PDH', principalPdh);
-
-  // Reduce available units
-  await supabase.from('state_bonds')
-    .update({ available_units: num(bond.available_units) - units } as any).eq('id', bondId);
-
-  // Create holding
-  const now = new Date();
-  const maturity = new Date(now.getTime() + num(bond.term_weeks) * WEEK_MS);
-  await supabase.from('bond_holdings').insert({
-    bond_id: bondId,
-    account_id: accountId,
-    units,
-    principal_pdh: principalPdh,
-    principal_denom: principalDenom,
-    purchased_at: now.toISOString(),
-    maturity_at: maturity.toISOString(),
-    last_coupon_at: now.toISOString(),
-  } as any);
-
-  // Log MAHR transaction
-  const { error: transactionError } = await supabase.from('transactions').insert({
-    id: transactionId(),
-    transaction_type: 'cdt_creation',
-    from_account_id: accountId,
-    from_account_number: acc.account_number,
-    amount: principalPdh,
-    currency: 'PDH',
-    description: `Compra de bono "${bond.name}" — ${units} u. × ${num(bond.unit_price)} ${bond.denom_currency}`,
-  } as any);
-  if (transactionError) throw transactionError;
 }
 
 export async function publishBondForSale(args: { holdingId: string; sellerAccountId: string; units: number; askPricePdh: number }): Promise<void> {
