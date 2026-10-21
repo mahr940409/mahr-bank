@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Building2, User, Globe, Pencil, Check, X, Wallet, Trash2 } from 'lucide-react';
 import { formatNumber } from '@/lib/currencyUtils';
 import { getBankSettings } from '@/hooks/useBankSettings';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface AccountCardProps {
   account: Account;
@@ -22,6 +23,7 @@ export function AccountCard({ account, availableForWithdrawal, withdrawalRestric
   const isMainBank = account.id === 'bank-main';
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(account.userName);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -115,9 +117,7 @@ export function AccountCard({ account, availableForWithdrawal, withdrawalRestric
                 className="h-6 w-6 shrink-0 text-destructive hover:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm(`¿Eliminar la cuenta "${account.userName}"? La cuenta debe tener saldo 0.`)) {
-                    onDelete(account.id);
-                  }
+                  setConfirmDelete(true);
                 }}
               >
                 <Trash2 className="h-3 w-3" />
@@ -190,6 +190,7 @@ export function AccountCard({ account, availableForWithdrawal, withdrawalRestric
           </div>
         )}
       </CardContent>
+      <ConfirmDialog open={confirmDelete} onOpenChange={setConfirmDelete} title="Eliminar cuenta" description={`¿Eliminar la cuenta "${account.userName}"? La cuenta debe tener saldo 0.`} confirmLabel="Eliminar" destructive onConfirm={async () => { onDelete?.(account.id); }} />
     </Card>
   );
 }

@@ -17,6 +17,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CreditCard, Calendar, DollarSign, AlertCircle, CheckCheck, Coins } from 'lucide-react';
 import { formatNumber } from '@/lib/currencyUtils';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface LoansPanelProps {
   loans: Loan[];
@@ -29,6 +30,8 @@ interface LoansPanelProps {
 export function LoansPanel({ loans, payments, onPayment, onPayInFull, onExtraPayment }: LoansPanelProps) {
   const [abonoLoanId, setAbonoLoanId] = useState<string | null>(null);
   const [abonoAmount, setAbonoAmount] = useState('');
+  const [confirmLoanId, setConfirmLoanId] = useState<string | null>(null);
+  const confirmLoan = loans.find(l => l.id === confirmLoanId);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -155,11 +158,7 @@ export function LoansPanel({ loans, payments, onPayment, onPayInFull, onExtraPay
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            if (confirm(`¿Liquidar préstamo por ${formatNumber(loan.outstandingBalance)} ${loan.currency}?`)) {
-                              onPayInFull(loan.id);
-                            }
-                          }}
+                          onClick={() => setConfirmLoanId(loan.id)}
                         >
                           <CheckCheck className="h-4 w-4 mr-1" /> Liquidar Total
                         </Button>
@@ -209,6 +208,7 @@ export function LoansPanel({ loans, payments, onPayment, onPayInFull, onExtraPay
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog open={!!confirmLoanId} onOpenChange={(open) => !open && setConfirmLoanId(null)} title="Liquidar préstamo" description={confirmLoan ? `¿Liquidar préstamo por ${formatNumber(confirmLoan.outstandingBalance)} ${confirmLoan.currency}?` : 'Confirma la liquidación del préstamo.'} confirmLabel="Liquidar" onConfirm={async () => { if (confirmLoanId) onPayInFull?.(confirmLoanId); setConfirmLoanId(null); }} />
     </div>
   );
 }
