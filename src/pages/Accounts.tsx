@@ -24,13 +24,15 @@ export default function Accounts() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [mahrCustody, setMahrCustody] = useState({ currencyDefensePdh: 0, internationalPdh: 0 });
+  const [mahrChequeFrozenPdh, setMahrChequeFrozenPdh] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
     Promise.all([
       supabase.from('bank_backings' as any).select('amount, currency_iso').eq('bank_type', 'national'),
       supabase.from('mahr_reserve_custody' as any).select('reserve_type, amount, currency_iso'),
-    ]).then(async ([backing, custody]) => {
+      supabase.from('bank_main_account' as any).select('balance_frozen_pdh').eq('id', 'bank-main').maybeSingle(),
+    ]).then(async ([backing, custody, main]) => {
       const rows = (backing.data as any[]) || [];
       const custodyRows = (custody.data as any[]) || [];
       const currencies = await supabase.from('currencies').select('iso_symbol, exchange_rate_to_pdh');
@@ -40,6 +42,7 @@ export default function Accounts() {
         .filter(row => row.reserve_type === 'currency_defense')
         .reduce((sum, row) => sum + Number(row.amount || 0) * (row.currency_iso === 'PDH' ? 1 : (rates[row.currency_iso] || 0)), 0);
       setMahrCustody({ currencyDefensePdh, internationalPdh });
+      setMahrChequeFrozenPdh(Number((main.data as any)?.balance_frozen_pdh || 0));
     });
   }, []);
 
@@ -71,7 +74,7 @@ export default function Accounts() {
   // to gross assets even when it is committed and not freely available.
   const grossMahrCustodyPdh = Number(bankMainAccount?.balance || 0) + mahrCustody.currencyDefensePdh;
   const committedMahrReservesPdh = mahrCustody.currencyDefensePdh + mahrCustody.internationalPdh;
-  const totalCommittedPdh = committedUsersPdh + committedMahrReservesPdh;
+  const totalCommittedPdh = committedUsersPdh + committedMahrReservesPdh + mahrChequeFrozenPdh;
   const availableAfterCommitmentsPdh = Math.max(0, grossMahrCustodyPdh - totalCommittedPdh);
 
   if (loading) {
@@ -128,10 +131,11 @@ export default function Accounts() {
               <div className="md:col-span-2 rounded-lg border bg-muted/30 p-4 grid gap-3 sm:grid-cols-2">
                 <div><p className="text-sm text-muted-foreground">Defensa monetaria en MAHR</p><p className="text-xl font-semibold">{formatNumber(mahrCustody.currencyDefensePdh)} PDH-eq</p></div>
                 <div><p className="text-sm text-muted-foreground">Respaldo internacional en MAHR</p><p className="text-xl font-semibold">{formatNumber(mahrCustody.internationalPdh)} PDH</p></div>
+                <div><p className="text-sm text-muted-foreground">Cheques bancarios congelados</p><p className="text-xl font-semibold">{formatNumber(mahrChequeFrozenPdh)} PDH</p></div>
               </div>
               <div className="md:col-span-3 rounded-lg border border-primary/30 bg-primary/5 p-4 grid gap-3 sm:grid-cols-3">
                 <div><p className="text-sm text-muted-foreground">Arcas brutas registradas</p><p className="text-xl font-semibold">{formatNumber(grossMahrCustodyPdh)} PDH</p><p className="text-xs text-muted-foreground">Saldo contable consolidado de MAHR Bank</p></div>
-                <div><p className="text-sm text-muted-foreground">Comprometido total</p><p className="text-xl font-semibold">{formatNumber(totalCommittedPdh)} PDH</p><p className="text-xs text-muted-foreground">Reservas: {formatNumber(committedMahrReservesPdh)} · Usuarios: {formatNumber(committedUsersPdh)}</p></div>
+                <div><p className="text-sm text-muted-foreground">Comprometido total</p><p className="text-xl font-semibold">{formatNumber(totalCommittedPdh)} PDH</p><p className="text-xs text-muted-foreground">Reservas: {formatNumber(committedMahrReservesPdh)} · Cheques: {formatNumber(mahrChequeFrozenPdh)} · Usuarios: {formatNumber(committedUsersPdh)}</p></div>
                 <div><p className="text-sm text-muted-foreground">Disponible después de compromisos</p><p className="text-xl font-semibold">{formatNumber(availableAfterCommitmentsPdh)} PDH</p></div>
               </div>
             </div>
