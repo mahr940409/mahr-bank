@@ -111,57 +111,13 @@ export default function CDTs() {
       const startDate = new Date();
       const maturityDate = isIndefinite ? addWeeks(startDate, 9999) : addWeeks(startDate, termWeeks);
 
-      // 1. Deduct from account first
-      const newBalance = account.balance - amount;
-      const { error: accountError } = await supabase
-        .from('accounts')
-        .update({ balance_pdh: newBalance } as any)
-        .eq('id', accountId);
-
-      if (accountError) {
-        console.error('Error updating account balance:', accountError);
-        throw new Error(`Error al actualizar saldo: ${accountError.message}`);
-      }
-
-      // 2. Create CDT
-      const { error: cdtError } = await supabase.from('cdts').insert({
-        account_id: accountId,
-        user_id: account.userId,
-        amount,
-        currency,
-        interest_rate: rate,
-        term_months: termWeeks,
-        start_date: startDate.toISOString(),
-        maturity_date: maturityDate.toISOString(),
-        final_amount: finalAmount,
-        early_withdrawal_penalty: 0.1,
-        interest_payout_frequency: frequency,
-        is_indefinite: isIndefinite,
+      const { error: cdtError } = await supabase.rpc('create_cdt_atomic' as any, {
+        p_account_id: accountId, p_user_id: account.userId, p_amount: amount, p_currency: currency,
+        p_interest_rate: rate, p_term_weeks: termWeeks, p_start_date: startDate.toISOString(),
+        p_maturity_date: maturityDate.toISOString(), p_final_amount: finalAmount,
+        p_penalty: 0.1, p_frequency: frequency, p_is_indefinite: isIndefinite,
       } as any);
-
-      if (cdtError) {
-        console.error('Error inserting CDT:', cdtError);
-        // Rollback account balance
-        const { error: rollbackError } = await supabase.from('accounts').update({ balance_pdh: account.balance } as any).eq('id', accountId);
-        if (rollbackError) console.error('Error rolling back account balance:', rollbackError);
-        throw new Error(`Error al crear CDT: ${cdtError.message}`);
-      }
-
-      // 3. Record transaction
-      const desc = isIndefinite
-        ? `Creación CDT Indefinido al ${(rate * 100).toFixed(1)}% anual (pago ${FREQUENCY_LABELS[frequency].toLowerCase()})`
-        : `Creación CDT - ${termWeeks} semanas al ${(rate * 100).toFixed(1)}% anual`;
-
-      const { error: transactionError } = await supabase.from('transactions').insert({
-        id: generateTxId(),
-        transaction_type: 'cdt_creation',
-        from_account_id: accountId,
-        from_account_number: account.accountNumber,
-        amount,
-        currency,
-        description: desc,
-      });
-      if (transactionError) throw new Error(`Error al registrar CDT: ${transactionError.message}`);
+      if (cdtError) throw new Error(`Error al crear CDT: ${cdtError.message}`);
 
       toast.success('CDT creado exitosamente');
       loadCDTs();
