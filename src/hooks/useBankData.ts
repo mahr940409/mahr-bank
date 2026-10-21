@@ -501,78 +501,22 @@ export function useBankData() {
 
     const currency = account.currency || 'PDH';
     const interestRate = getInterestRateByAccountType(account.type);
-    const weeklyPayment = calculateWeeklyPayment(amount, interestRate, termWeeks);
     const loanId = `LOAN-${Date.now()}`;
     const startDate = new Date();
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + (termWeeks * 7));
-
-    // Convert amount to PDH for bank main account
-    const amountInPDH = convertCurrency(amount, currency, 'PDH');
-
-    const { error: loanError } = await supabase.from('loans').insert({
-      id: loanId,
-      user_id: account.userId,
-      account_id: accountId,
-      amount,
-      currency,
-      interest_rate: interestRate,
-      term_months: termWeeks, // DB column is term_months but stores weeks
-      monthly_payment: weeklyPayment, // DB column is monthly_payment but stores weekly
-      outstanding_balance: amount,
-      status: 'active',
-      start_date: startDate.toISOString(),
-      end_date: endDate.toISOString(),
+    const { error: loanError } = await supabase.rpc('create_loan_atomic' as any, {
+      p_loan_id: loanId,
+      p_user_id: account.userId,
+      p_account_id: accountId,
+      p_amount: amount,
+      p_currency: currency,
+      p_interest_rate: interestRate,
+      p_term_weeks: termWeeks,
+      p_start_date: startDate.toISOString(),
     } as any);
-
     if (loanError) {
-      toast({ title: 'Error', description: 'No se pudo crear el préstamo.', variant: 'destructive' });
+      toast({ title: 'Error', description: loanError.message, variant: 'destructive' });
       return;
     }
-
-    const paymentSchedule = generatePaymentSchedule(loanId, amount, interestRate, termWeeks, startDate);
-    
-    for (const payment of paymentSchedule) {
-      const paymentId = `PAY-${Date.now()}-${payment.paymentNumber}`;
-      await supabase.from('loan_payments').insert({
-        id: paymentId,
-        loan_id: payment.loanId,
-        payment_number: payment.paymentNumber,
-        due_date: payment.dueDate.toISOString(),
-        amount: payment.amount,
-        principal: payment.principal,
-        interest: payment.interest,
-        penalty: payment.penalty,
-        status: payment.status,
-      });
-    }
-
-    // Disburse loan - add amount in account's currency
-    const newBalance = account.balance + amount;
-    await supabase
-      .from('accounts')
-      .update({ balance_pdh: newBalance } as any)
-      .eq('id', accountId);
-
-    // Deduct from bank in PDH
-    const newBankBalance = bankMainAccount.balance - amountInPDH;
-    await supabase
-      .from('bank_main_account')
-      .update({ balance_pdh: newBankBalance } as any)
-      .eq('id', 'bank-main');
-
-    const txnId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    await supabase.from('transactions').insert({
-      id: txnId,
-      transaction_type: 'loan_disbursement',
-      from_account_id: 'bank-main',
-      from_account_number: 'MAHR-BANK-000001',
-      to_account_id: accountId,
-      to_account_number: account.accountNumber,
-      amount,
-      currency: currency,
-      description: `Desembolso de préstamo ${loanId} - ${account.userName}`,
-    });
 
     await loadAllData();
     toast({ title: 'Préstamo aprobado', description: `Préstamo de ${amount.toFixed(2)} ${currency} desembolsado exitosamente.` });
