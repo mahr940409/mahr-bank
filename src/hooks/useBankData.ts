@@ -663,67 +663,12 @@ export function useBankData() {
     }
 
     const currency = loan.currency || 'PDH';
-    const newOutstanding = loan.outstandingBalance - amount;
-
-    // Re-amortize pending payments
-    const pending = loanPayments
-      .filter((p) => p.loanId === loanId && p.status !== 'paid')
-      .sort((a, b) => a.paymentNumber - b.paymentNumber);
-
-    if (newOutstanding <= 0) {
-      // Fully paid via abono
-      for (const p of pending) {
-        const { error } = await supabase.from('loan_payments').update({ status: 'paid', paid_date: new Date().toISOString() }).eq('id', p.id);
-        if (error) throw error;
-      }
-      const { error } = await supabase.from('loans').update({ outstanding_balance: 0, status: 'completed', end_date: new Date().toISOString() }).eq('id', loanId);
-      if (error) throw error;
-    } else if (pending.length > 0) {
-      const weeks = pending.length;
-      const annualRate = loan.interestRate;
-      const newWeeklyPayment = calculateWeeklyPayment(newOutstanding, annualRate, weeks);
-      const weeklyRate = annualRate / 52 / 100;
-      let remaining = newOutstanding;
-      for (const p of pending) {
-        const interest = remaining * weeklyRate;
-        const principal = newWeeklyPayment - interest;
-        remaining -= principal;
-        const { error } = await supabase.from('loan_payments').update({
-          amount: Math.round(newWeeklyPayment * 100) / 100,
-          principal: Math.round(principal * 100) / 100,
-          interest: Math.round(Math.max(0, interest) * 100) / 100,
-        }).eq('id', p.id);
-        if (error) throw error;
-      }
-      const { error } = await supabase.from('loans').update({
-        outstanding_balance: newOutstanding,
-        monthly_payment: Math.round(newWeeklyPayment * 100) / 100,
-      }).eq('id', loanId);
-      if (error) throw error;
-    } else {
-      const { error } = await supabase.from('loans').update({ outstanding_balance: newOutstanding }).eq('id', loanId);
-      if (error) throw error;
-    }
-
-    const amountInPDH = convertCurrency(amount, currency, 'PDH');
-    const { error: accountError } = await supabase.from('accounts').update({ balance_pdh: account.balance - amount } as any).eq('id', account.id);
-    if (accountError) throw accountError;
-    const { error: bankError } = await supabase.from('bank_main_account').update({ balance_pdh: bankMainAccount.balance + amountInPDH } as any).eq('id', 'bank-main');
-    if (bankError) throw bankError;
-
-    const txnId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const { error: transactionError } = await supabase.from('transactions').insert({
-      id: txnId,
-      transaction_type: 'loan_payment',
-      from_account_id: account.id,
-      from_account_number: account.accountNumber,
-      to_account_id: 'bank-main',
-      to_account_number: 'MAHR-BANK-000001',
-      amount,
-      currency,
-      description: `Abono a capital - Préstamo ${loanId.slice(0, 8)}`,
-    });
-    if (transactionError) throw transactionError;
+    const { error } = await supabase.rpc('pay_loan_extra_atomic' as any, {
+      p_loan_id: loanId,
+      p_amount: amount,
+      p_currency: currency,
+    } as any);
+    if (error) throw error;
 
     await loadAllData();
     toast({ title: 'Abono realizado', description: `Se abonaron ${amount.toFixed(2)} ${currency} a capital.` });
