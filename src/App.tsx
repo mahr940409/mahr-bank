@@ -22,6 +22,7 @@ import Bonds from "./pages/Bonds";
 import NotFound from "./pages/NotFound";
 import Calculator from "./pages/Calculator";
 import CashOut from "./pages/CashOut";
+import Negotiables from "./pages/Negotiables";
 
 const queryClient = new QueryClient();
 
@@ -50,6 +51,7 @@ const App = () => (
               <Route path="/bonds" element={<Bonds />} />
               <Route path="/calculator" element={<Calculator />} />
               <Route path="/cash-out" element={<CashOut />} />
+              <Route path="/negotiables" element={<Negotiables />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

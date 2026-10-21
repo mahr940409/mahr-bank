@@ -43,6 +43,7 @@ const banking: Item[] = [
   { to: "/loans", label: "Préstamos", icon: CreditCard },
   { to: "/cdts", label: "CDTs", icon: TrendingUp },
   { to: "/payroll", label: "Nóminas", icon: FileText },
+  { to: "/negotiables", label: "Cheques y pagarés", icon: FileText },
 ];
 
 const market: Item[] = [
