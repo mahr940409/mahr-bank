@@ -413,73 +413,18 @@ export function useBankData() {
       return;
     }
 
-    if (fromAccountId !== 'bank-main' && toAccountId !== 'bank-main' && fromAccount.currency === toAccount.currency) {
-      const { error: atomicError } = await supabase.rpc('transfer_mahr_accounts' as any, {
-        p_from_account_id: fromAccountId,
-        p_to_account_id: toAccountId,
-        p_amount: amount,
-        p_commission: result.transaction.commission || 0,
-        p_currency: currency,
-        p_description: result.transaction.description,
-      } as any);
-      if (atomicError) {
-        toast({ title: 'Error', description: atomicError.message, variant: 'destructive' });
-        return;
-      }
-      await loadAllData();
-      toast({ title: 'Transferencia realizada', description: `Transferencia de ${amount.toFixed(2)} ${currency} realizada exitosamente.` });
+    const { error: atomicError } = await supabase.rpc('transfer_mahr_accounts' as any, {
+      p_from_account_id: fromAccountId,
+      p_to_account_id: toAccountId,
+      p_amount: amount,
+      p_commission: result.transaction.commission || 0,
+      p_currency: currency,
+      p_description: result.transaction.description,
+    } as any);
+    if (atomicError) {
+      toast({ title: 'Error', description: atomicError.message, variant: 'destructive' });
       return;
     }
-    
-    // Update from account
-    const fromTable = fromAccountId === 'bank-main' ? 'bank_main_account' : 'accounts';
-    await supabase
-      .from(fromTable as any)
-      .update({
-        balance_pdh: result.updatedFromAccount.balance,
-        balance_real: fromAccountId === 'bank-main' ? undefined : Number(fromAccount.balanceReal ?? fromAccount.balance) - (fromAccount.balance - result.updatedFromAccount.balance),
-      } as any)
-      .eq('id', fromAccountId);
-    
-    // Update to account
-    if (toAccountId === 'bank-main') {
-      const bankBalance = result.updatedToAccount.balance + 
-        (result.updatedBankAccount.balance - bankMainAccount.balance);
-      await supabase
-        .from('bank_main_account')
-        .update({ balance_pdh: bankBalance } as any)
-        .eq('id', 'bank-main');
-    } else {
-      await supabase
-        .from('accounts' as any)
-        .update({
-          balance_pdh: result.updatedToAccount.balance,
-          balance_real: toAccountId === 'bank-main' ? undefined : Number(toAccount.balanceReal ?? toAccount.balance) + (result.updatedToAccount.balance - toAccount.balance),
-        } as any)
-        .eq('id', toAccountId);
-      
-      if (result.updatedBankAccount.balance !== bankMainAccount.balance) {
-        await supabase
-          .from('bank_main_account')
-          .update({ balance_pdh: result.updatedBankAccount.balance } as any)
-          .eq('id', 'bank-main');
-      }
-    }
-    
-    const txnId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    await supabase.from('transactions').insert({
-      id: txnId,
-      transaction_type: result.transaction.type,
-      from_account_id: result.transaction.fromAccountId,
-      from_account_number: result.transaction.fromAccountNumber,
-      to_account_id: result.transaction.toAccountId,
-      to_account_number: result.transaction.toAccountNumber,
-      amount: result.transaction.amount,
-      currency: result.transaction.currency,
-      commission: result.transaction.commission,
-      commission_currency: result.transaction.commissionCurrency,
-      description: result.transaction.description,
-    });
     
     await loadAllData();
     toast({ title: 'Transferencia realizada', description: `Transferencia de ${amount.toFixed(2)} ${currency} realizada exitosamente.` });
