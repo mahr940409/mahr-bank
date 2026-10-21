@@ -493,49 +493,17 @@ export async function privateDeposit(args: {
         throw new Error(`No hay suficientes billetes de ${value} en circulación. Disponibles: ${Math.max(0, issued - alreadyHeld)}.`);
       }
     }
-    const { data: debitedSource, error: sourceDebitError } = await supabase.from('national_bank_accounts' as any)
-      .update({ balance_real: num(sourceNational.balance_real) - amount } as any)
-      .eq('id', sourceNational.id)
-      .gte('balance_real', amount)
-      .select('id')
-      .maybeSingle();
-    if (sourceDebitError) throw sourceDebitError;
-    if (!debitedSource) throw new Error('El saldo nacional cambió antes de completar el depósito. Inténtalo de nuevo.');
-    const { data: creditedAccount, error: accountCreditError } = await supabase.from('private_bank_accounts' as any)
-      .update({ balance_real: num(to.balance_real) + net } as any).eq('id', toAccountId).select('id').maybeSingle();
-    if (accountCreditError) throw accountCreditError;
-    if (!creditedAccount) throw new Error('La cuenta privada de destino ya no existe.');
-    for (const [value, countRaw] of Object.entries(args.denominationBreakdown)) {
-      const denomination = (denominations as any[] || []).find(d => Math.abs(Number(d.value) - Number(value)) < 0.000001);
-      if (denomination) {
-        const count = Math.floor(Number(countRaw));
-        const { data: nationalHeld, error: nationalHeldError } = await supabase.from('banknote_custody' as any)
-          .select('quantity').eq('bank_type', 'national').eq('bank_id', sourceNational.national_bank_id).eq('denomination_id', denomination.id).maybeSingle();
-        if (nationalHeldError) throw nationalHeldError;
-        if (Number(nationalHeld?.quantity || 0) < count) {
-          throw new Error(`El Banco Nacional no tiene suficientes billetes de ${value} para transferir.`);
-        }
-        const { data: movedNational, error: nationalMoveError } = await supabase.from('banknote_custody' as any)
-          .update({ quantity: Number(nationalHeld.quantity) - count, updated_at: new Date().toISOString() } as any)
-          .eq('bank_type', 'national').eq('bank_id', sourceNational.national_bank_id).eq('denomination_id', denomination.id)
-          .gte('quantity', count).select('id').maybeSingle();
-        if (nationalMoveError) throw nationalMoveError;
-        if (!movedNational) throw new Error('La custodia nacional cambió antes de mover los billetes. Inténtalo de nuevo.');
-        const { data: current } = await supabase.from('banknote_custody' as any)
-          .select('quantity').eq('bank_type', 'private').eq('bank_id', bankId).eq('denomination_id', denomination.id).maybeSingle();
-        const { error: custodyError } = await supabase.from('banknote_custody' as any).upsert({
-          bank_type: 'private', bank_id: bankId, denomination_id: denomination.id,
-          quantity: Number(current?.quantity || 0) + count, updated_at: new Date().toISOString(),
-        } as any, { onConflict: 'bank_type,bank_id,denomination_id' });
-        if (custodyError) {
-          await supabase.from('banknote_custody' as any)
-            .update({ quantity: Number(nationalHeld.quantity), updated_at: new Date().toISOString() } as any)
-            .eq('bank_type', 'national').eq('bank_id', sourceNational.national_bank_id).eq('denomination_id', denomination.id);
-          throw custodyError;
-        }
-      }
-    }
-    // Transferencia desde el banco nacional: no es efectivo, no entra a la bóveda.
+    const { error: printedDepositError } = await supabase.rpc('deposit_private_printed_atomic' as any, {
+      p_bank_id: bankId,
+      p_source_national_account_id: sourceNational.id,
+      p_target_account_id: toAccountId,
+      p_amount: amount,
+      p_net: net,
+      p_fee: fee,
+      p_currency_iso: currencyIso,
+      p_denomination_breakdown: args.denominationBreakdown || {},
+    } as any);
+    if (printedDepositError) throw printedDepositError;
   } else {
     if (!args.backingCurrency) throw new Error('Selecciona la moneda de respaldo para dinero simbólico.');
     const { data: dCountry } = await supabase.from('countries').select('currency_id').eq('id', (bank as any).country_id).maybeSingle();
