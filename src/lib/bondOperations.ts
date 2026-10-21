@@ -161,7 +161,8 @@ export async function updateBondMarketOrderPrice(orderId: string, sellerAccountI
 export async function processCoupons(nationalBankId?: string): Promise<{ paid: number; total: number }> {
   let q = supabase.from('bond_holdings').select('*, state_bonds!inner(*)').eq('status', 'active');
   if (nationalBankId) q = q.eq('state_bonds.national_bank_id', nationalBankId);
-  const { data: holdings } = await q;
+  const { data: holdings, error: holdingsError } = await q;
+  if (holdingsError) throw holdingsError;
   if (!holdings) return { paid: 0, total: 0 };
   let paid = 0;
   let totalPdh = 0;
