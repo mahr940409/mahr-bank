@@ -306,50 +306,19 @@ export async function addBacking(bankId: string, currency: string, amount: numbe
   if (ownIso && currency === ownIso) {
     throw new Error(`Un banco no puede agregar respaldo en su propia moneda (${ownIso}).`);
   }
-  const rate = await getRateToPdh(currency);
-  const valuePdh = amount * rate;
-  const bm = await getBankMain();
-  await adjustBacking('national', bankId, currency, amount);
-  await syncInternationalCustody(bankId, currency);
-  await supabase.from('bank_main_account')
-    .update({ balance_pdh: num(bm.balance_pdh) + valuePdh } as any).eq('id', 'bank-main');
-
-  await logTx({
-    national_bank_id: bankId,
-    transaction_type: 'mahr_deposit_backing',
-    from_account_id: null, to_account_id: null, counterparty_national_bank_id: null,
-    amount_local: 0, currency_local: null,
-    backing_amount: amount, backing_currency: currency,
-    is_symbolic: false,
-    description: `Depósito de respaldo ${amount.toFixed(2)} ${currency} (≈ ${valuePdh.toFixed(2)} PDH) al MAHR Bank`,
-    status: 'executed',
-  });
+  const { error } = await supabase.rpc('adjust_national_backing_atomic' as any, {
+    p_bank_id: bankId, p_currency: currency, p_delta: amount,
+  } as any);
+  if (error) throw error;
 }
 
 /** Retiro de respaldo: devuelve unidades de la moneda; MAHR entrega su valor actual en PDH. */
 export async function withdrawBacking(bankId: string, currency: string, amount: number): Promise<void> {
   if (amount <= 0) throw new Error('Monto inválido.');
-  const rate = await getRateToPdh(currency);
-  await requireBackingFor('national', bankId, currency, amount * rate);
-  const valuePdh = amount * rate;
-  const bm = await getBankMain();
-  if (num(bm.balance_pdh) < valuePdh) throw new Error('MAHR Bank no tiene fondos suficientes para devolver el depósito.');
-
-  await adjustBacking('national', bankId, currency, -amount);
-  await syncInternationalCustody(bankId, currency);
-  await supabase.from('bank_main_account')
-    .update({ balance_pdh: num(bm.balance_pdh) - valuePdh } as any).eq('id', 'bank-main');
-
-  await logTx({
-    national_bank_id: bankId,
-    transaction_type: 'mahr_withdraw_backing',
-    from_account_id: null, to_account_id: null, counterparty_national_bank_id: null,
-    amount_local: 0, currency_local: null,
-    backing_amount: amount, backing_currency: currency,
-    is_symbolic: false,
-    description: `Retiro de respaldo ${amount.toFixed(2)} ${currency} (≈ ${valuePdh.toFixed(2)} PDH) desde MAHR Bank`,
-    status: 'executed',
-  });
+  const { error } = await supabase.rpc('adjust_national_backing_atomic' as any, {
+    p_bank_id: bankId, p_currency: currency, p_delta: -amount,
+  } as any);
+  if (error) throw error;
 }
 
 // ---------- National operations ----------
