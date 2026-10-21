@@ -631,30 +631,11 @@ export function useBankData() {
       return;
     }
 
-    const totalPaymentInPDH = convertCurrency(totalPayment, currency, 'PDH');
-
-    // Mark all pending payments as paid
-    for (const p of pendingPayments) {
-      await supabase.from('loan_payments').update({ status: 'paid', paid_date: new Date().toISOString() }).eq('id', p.id);
-    }
-
-    await supabase.from('loans').update({ outstanding_balance: 0, status: 'completed', end_date: new Date().toISOString() }).eq('id', loanId);
-
-    await supabase.from('accounts').update({ balance_pdh: account.balance - totalPayment } as any).eq('id', account.id);
-    await supabase.from('bank_main_account').update({ balance_pdh: bankMainAccount.balance + totalPaymentInPDH } as any).eq('id', 'bank-main');
-
-    const txnId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    await supabase.from('transactions').insert({
-      id: txnId,
-      transaction_type: 'loan_payment',
-      from_account_id: account.id,
-      from_account_number: account.accountNumber,
-      to_account_id: 'bank-main',
-      to_account_number: 'MAHR-BANK-000001',
-      amount: totalPayment,
-      currency,
-      description: `Liquidación total - Préstamo ${loanId.slice(0, 8)}`,
-    });
+    const { error: fullPaymentError } = await supabase.rpc('pay_loan_in_full_atomic' as any, {
+      p_loan_id: loanId,
+      p_currency: currency,
+    } as any);
+    if (fullPaymentError) throw fullPaymentError;
 
     await loadAllData();
     toast({ title: 'Préstamo liquidado', description: `Se liquidó el préstamo por ${totalPayment.toFixed(2)} ${currency}.` });
