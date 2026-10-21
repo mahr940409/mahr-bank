@@ -628,6 +628,17 @@ export async function privateTransfer(args: {
   const { bankId, fromAccountId, toAccountId, amount, currencyIso, rateToPdh } = args;
   if (amount <= 0) throw new Error('Monto inválido.');
   if (fromAccountId === toAccountId) throw new Error('Cuentas iguales.');
+
+  const { error: atomicError } = await supabase.rpc('transfer_private_accounts_atomic' as any, {
+    p_bank_id: bankId,
+    p_from_account_id: fromAccountId,
+    p_to_account_id: toAccountId,
+    p_amount: amount,
+    p_currency_iso: currencyIso,
+  } as any);
+  if (!atomicError) return;
+  if (!/transfer_private_accounts_atomic|function|schema cache/i.test(atomicError.message || '')) throw atomicError;
+
   const from = await getAccount(fromAccountId);
   const to = await getAccount(toAccountId);
   const totalFrom = num(from.balance_real) + num(from.balance_symbolic);
