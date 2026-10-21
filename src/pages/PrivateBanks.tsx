@@ -18,6 +18,7 @@ import { Loader2, Plus, Trash2, Building, ArrowLeft, Search } from 'lucide-react
 import { formatNumber } from '@/lib/currencyUtils';
 import { GUARANTOR_KYD } from '@/lib/privateBankOperations';
 import { BackingCurrencySelect, BackingTable } from '@/components/bank/BackingUI';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function PrivateBanks() {
   const pb = usePrivateBanks();
@@ -224,6 +225,7 @@ function BankDetail({ bank, onBack, pb }: { bank: PrivateBankEnriched; onBack: (
   const [openOp, setOpenOp] = useState<null | 'deposit' | 'withdraw' | 'transfer'>(null);
   const [prefillAccId, setPrefillAccId] = useState<string | null>(null);
   const [openReserve, setOpenReserve] = useState<null | 'add' | 'withdraw'>(null);
+  const [confirmation, setConfirmation] = useState<{ title: string; description: string; onConfirm: () => Promise<void> } | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -243,11 +245,7 @@ function BankDetail({ bank, onBack, pb }: { bank: PrivateBankEnriched; onBack: (
             <p className="text-muted-foreground">{bank.country?.name} · {iso}</p>
           </div>
         </div>
-        <Button variant="destructive" size="icon" onClick={async () => {
-          if (confirm('Eliminar banco privado? Se devolverá el fiador si sigue congelado.')) {
-            try { await pb.deleteBank(bank.id); onBack(); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
-          }
-        }}><Trash2 className="h-4 w-4" /></Button>
+        <Button variant="destructive" size="icon" onClick={() => setConfirmation({ title: 'Eliminar banco privado', description: 'Se devolverá el fiador si sigue congelado.', onConfirm: async () => { try { await pb.deleteBank(bank.id); onBack(); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } })}><Trash2 className="h-4 w-4" /></Button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-5">
@@ -305,7 +303,7 @@ function BankDetail({ bank, onBack, pb }: { bank: PrivateBankEnriched; onBack: (
                       <Button variant="ghost" size="sm" onClick={() => { setPrefillAccId(a.id); setOpenOp('withdraw'); }}>Retiro</Button>
                       <Button variant="ghost" size="sm" onClick={() => { setPrefillAccId(a.id); setOpenOp('transfer'); }}>Traspaso</Button>
                       {a.type !== 'main' && (
-                        <Button variant="ghost" size="icon" onClick={async () => { if (confirm('Eliminar cuenta?')) { try { await pb.deleteAccount(a.id); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } }}>
+                        <Button variant="ghost" size="icon" onClick={() => setConfirmation({ title: 'Eliminar cuenta', description: 'La cuenta debe estar vacía y no ser la cuenta principal.', onConfirm: async () => { try { await pb.deleteAccount(a.id); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } })}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       )}
@@ -379,6 +377,7 @@ function BankDetail({ bank, onBack, pb }: { bank: PrivateBankEnriched; onBack: (
 
       {/* Op dialog */}
       <OpDialog mode={openOp} onClose={() => setOpenOp(null)} bank={bank} pb={pb} prefillAccId={prefillAccId} nationalAccounts={nationalAccounts} />
+      {confirmation && <ConfirmDialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open) setConfirmation(null); }} title={confirmation.title} description={confirmation.description} destructive onConfirm={async () => { await confirmation.onConfirm(); setConfirmation(null); }} />}
     </div>
   );
 }
