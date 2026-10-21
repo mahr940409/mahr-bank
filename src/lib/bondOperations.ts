@@ -167,7 +167,7 @@ export async function buyBond(args: {
   } as any);
 
   // Log MAHR transaction
-  await supabase.from('transactions').insert({
+  const { error: transactionError } = await supabase.from('transactions').insert({
     id: transactionId(),
     transaction_type: 'cdt_creation',
     from_account_id: accountId,
@@ -176,6 +176,7 @@ export async function buyBond(args: {
     currency: 'PDH',
     description: `Compra de bono "${bond.name}" — ${units} u. × ${num(bond.unit_price)} ${bond.denom_currency}`,
   } as any);
+  if (transactionError) throw transactionError;
 }
 
 export async function publishBondForSale(args: { holdingId: string; sellerAccountId: string; units: number; askPricePdh: number }): Promise<void> {
@@ -268,11 +269,12 @@ export async function processCoupons(nationalBankId?: string): Promise<{ paid: n
     // Pay buyer
     const totalToBuyer = paidPdhTotal + principalReturn;
     if (totalToBuyer > 0) {
-      await supabase.from('accounts').update({
+      const { error: accountError } = await supabase.from('accounts').update({
         balance_pdh: num(acc.balance_pdh) + totalToBuyer,
       } as any).eq('id', h.account_id);
+      if (accountError) throw accountError;
 
-      await supabase.from('transactions').insert({
+      const { error: payoutError } = await supabase.from('transactions').insert({
         id: transactionId(),
         transaction_type: 'cdt_interest_payout',
         to_account_id: h.account_id,
@@ -283,16 +285,18 @@ export async function processCoupons(nationalBankId?: string): Promise<{ paid: n
           ? `Bono "${bond.name}" vencido: ${paidWeeks} cupón(es) + capital`
           : `Cupón bono "${bond.name}" (${paidWeeks} semana(s))`,
       } as any);
+      if (payoutError) throw payoutError;
     }
 
     // Update holding
     const newLast = new Date(lastCoupon + paidWeeks * WEEK_MS).toISOString();
-    await supabase.from('bond_holdings').update({
+    const { error: holdingError } = await supabase.from('bond_holdings').update({
       last_coupon_at: newLast,
       coupons_paid: h.coupons_paid + paidWeeks,
       total_interest_pdh: num(h.total_interest_pdh) + paidPdhTotal,
       status: newStatus,
     } as any).eq('id', h.id);
+    if (holdingError) throw holdingError;
 
     paid += paidWeeks;
     totalPdh += paidPdhTotal + principalReturn;
@@ -326,16 +330,18 @@ export async function repurchaseHolding(holdingId: string): Promise<void> {
   const totalOut = num(h.principal_pdh) + dueCoupons;
 
   await spendBackingPdh('national', bank.id, totalOut);
-  await supabase.from('accounts').update({ balance_pdh: num(acc.balance_pdh) + totalOut } as any).eq('id', acc.id);
+  const { error: accountError } = await supabase.from('accounts').update({ balance_pdh: num(acc.balance_pdh) + totalOut } as any).eq('id', acc.id);
+  if (accountError) throw accountError;
 
-  await supabase.from('bond_holdings').update({
+  const { error: holdingError } = await supabase.from('bond_holdings').update({
     status: 'repurchased',
     coupons_paid: h.coupons_paid + weeksDue,
     total_interest_pdh: num(h.total_interest_pdh) + dueCoupons,
     last_coupon_at: new Date(now).toISOString(),
   } as any).eq('id', holdingId);
+  if (holdingError) throw holdingError;
 
-  await supabase.from('transactions').insert({
+  const { error: liquidationError } = await supabase.from('transactions').insert({
     id: transactionId(),
     transaction_type: 'cdt_liquidation',
     to_account_id: acc.id,
@@ -344,4 +350,5 @@ export async function repurchaseHolding(holdingId: string): Promise<void> {
     currency: 'PDH',
     description: `Recompra anticipada de bono "${bond.name}" (capital + ${weeksDue} cupón pendiente)`,
   } as any);
+  if (liquidationError) throw liquidationError;
 }
