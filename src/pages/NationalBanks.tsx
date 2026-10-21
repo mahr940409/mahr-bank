@@ -19,6 +19,7 @@ import { BondsPanel } from '@/components/national/BondsPanel';
 import { BanknotesPanel, NOTES_PER_BOX } from '@/components/national/BanknotesPanel';
 import { CashWithdrawalPanel } from '@/components/national/CashWithdrawalPanel';
 import { BackingCurrencySelect, BackingTable } from '@/components/bank/BackingUI';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function NationalBanks() {
   const {
@@ -131,6 +132,7 @@ function BankDetail({
   const [pickerAccountId, setPickerAccountId] = useState<string | null>(null);
   const [issuanceAmount, setIssuanceAmount] = useState('');
   const [issuanceCurrency, setIssuanceCurrency] = useState('PDH');
+  const [confirmation, setConfirmation] = useState<{ title: string; description: string; onConfirm: () => Promise<void> } | null>(null);
 
   const filteredAccounts = useMemo(() => {
     const q = accountSearch.trim().toLowerCase();
@@ -167,7 +169,7 @@ function BankDetail({
               <SelectItem value="blocked">Bloqueado</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="destructive" size="icon" onClick={async () => { if (confirm('Eliminar el Banco Nacional y todas sus cuentas?')) { try { await ops.deleteBank(bank.id); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } }}>
+          <Button variant="destructive" size="icon" onClick={() => setConfirmation({ title: 'Eliminar banco nacional', description: 'Se eliminará el banco y sus cuentas si las reglas de integridad lo permiten.', onConfirm: async () => { try { await ops.deleteBank(bank.id); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } })}>
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -304,7 +306,7 @@ function BankDetail({
                     <TableCell className="text-right tabular-nums">{formatNumber(Number(a.balance_symbolic))} {bank.metrics.currency_iso}</TableCell>
                     <TableCell className="text-right tabular-nums">{a.backing_currency ? `${formatNumber(Number(a.backing_amount))} ${a.backing_currency}` : '—'}</TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon" onClick={async () => { if (confirm('Eliminar cuenta?')) { try { await ops.deleteAccount(a.id); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } }}>
+                      <Button variant="ghost" size="icon" onClick={() => setConfirmation({ title: 'Eliminar cuenta nacional', description: 'La cuenta debe estar vacía y no ser la cuenta operativa protegida.', onConfirm: async () => { try { await ops.deleteAccount(a.id); } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); } } })}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </TableCell>
@@ -398,6 +400,7 @@ function BankDetail({
       </Dialog>
 
       <OpDialog mode={openOp} onClose={() => { setOpenOp(null); setPrefillAccountId(null); }} bank={bank} allBanks={allBanks} ops={ops} initialAccountId={prefillAccountId} />
+      {confirmation && <ConfirmDialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open) setConfirmation(null); }} title={confirmation.title} description={confirmation.description} destructive onConfirm={async () => { await confirmation.onConfirm(); setConfirmation(null); }} />}
     </div>
   );
 }
