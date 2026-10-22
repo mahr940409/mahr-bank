@@ -2,12 +2,6 @@
 ALTER TABLE public.countries
   ADD COLUMN IF NOT EXISTS can_issue_currency boolean NOT NULL DEFAULT true;
 
--- Ecuador adopts USD and therefore cannot print or burn USD through its
--- national bank. It can still hold and receive USD backed through MAHR.
-UPDATE public.countries
-SET can_issue_currency = false
-WHERE lower(name) IN ('ecuador', 'república del ecuador', 'republica del ecuador');
-
 CREATE OR REPLACE FUNCTION public.print_banknote_boxes(
   p_bank_id text, p_denomination_id text, p_boxes integer
 ) RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path = public AS $$
