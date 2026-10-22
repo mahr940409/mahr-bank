@@ -2,7 +2,10 @@
 -- currency to its own currency. No country or currency is created here.
 CREATE TABLE IF NOT EXISTS public.national_bank_foreign_cash (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  national_bank_id text NOT NULL REFERENCES public.national_banks(id) ON DELETE CASCADE,
+  -- Production installations may not expose national_banks.id as a unique
+  -- constraint even though the logical model treats it as the identifier.
+  -- The transition function validates the bank before writing this custody.
+  national_bank_id text NOT NULL,
   currency_iso text NOT NULL,
   amount numeric NOT NULL CHECK (amount >= 0),
   source text NOT NULL DEFAULT 'currency_transition',
