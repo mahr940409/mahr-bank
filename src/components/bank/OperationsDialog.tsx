@@ -300,7 +300,7 @@ export function OperationsDialog({
                 const settings = getBankSettings();
                 const isBusiness = selectedWithdrawalAccount.type === 'business';
                 const rate = isBusiness ? settings.businessTransferCommission : 0;
-                const committedPdh = selectedWithdrawalAccount.id === 'bank-main' ? mainCommittedPdh : 0;
+                const committedPdh = selectedWithdrawalAccount.id === 'bank-main' ? 0 : 0;
                 const availableBalance = Math.max(0, selectedWithdrawalAccount.balance - (selectedWithdrawalAccount.balanceFrozen ?? 0) - committedPdh);
                 const maxWithdrawable = availableBalance / (1 + rate);
                 const commission = maxWithdrawable * rate;
@@ -313,8 +313,9 @@ export function OperationsDialog({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Saldo congelado:</span>
-                      <span className="font-medium text-amber-600">{formatNumber((selectedWithdrawalAccount.balanceFrozen ?? 0) + committedPdh)} {selectedWithdrawalAccount.currency}</span>
+                      <span className="font-medium text-amber-600">{formatNumber(selectedWithdrawalAccount.balanceFrozen ?? 0)} {selectedWithdrawalAccount.currency}</span>
                     </div>
+                    {selectedWithdrawalAccount.id === 'bank-main' && mainCommittedPdh > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Reservas controladas por MAHR:</span><span className="font-medium text-amber-600">{formatNumber(mainCommittedPdh)} PDH</span></div>}
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Disponible sin compromisos:</span>
                       <span className="font-semibold">{formatNumber(availableBalance)} {selectedWithdrawalAccount.currency}</span>
