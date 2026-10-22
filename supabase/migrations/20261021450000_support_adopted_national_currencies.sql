@@ -1,0 +1,58 @@
+-- A country may use a foreign currency without becoming its issuer.
+ALTER TABLE public.countries
+  ADD COLUMN IF NOT EXISTS can_issue_currency boolean NOT NULL DEFAULT true;
+
+-- Ecuador adopts USD and therefore cannot print or burn USD through its
+-- national bank. It can still hold and receive USD backed through MAHR.
+UPDATE public.countries
+SET can_issue_currency = false
+WHERE lower(name) IN ('ecuador', 'república del ecuador', 'republica del ecuador');
+
+CREATE OR REPLACE FUNCTION public.print_banknote_boxes(
+  p_bank_id text, p_denomination_id text, p_boxes integer
+) RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path = public AS $$
+DECLARE
+  v_denom public.banknote_denominations%ROWTYPE;
+  v_currency public.currencies%ROWTYPE;
+  v_country public.countries%ROWTYPE;
+  v_currency_id text;
+  v_amount numeric;
+  v_circulation numeric;
+BEGIN
+  IF p_boxes IS NULL OR p_boxes <= 0 THEN
+    RAISE EXCEPTION 'La cantidad de cajas debe ser mayor que cero';
+  END IF;
+
+  SELECT co.* INTO v_country
+  FROM public.national_banks nb
+  JOIN public.countries co ON co.id = nb.country_id
+  WHERE nb.id = p_bank_id
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Banco nacional inexistente'; END IF;
+  IF NOT v_country.can_issue_currency THEN
+    RAISE EXCEPTION 'Este banco usa una moneda adoptada y no puede imprimir billetes';
+  END IF;
+  v_currency_id := v_country.currency_id;
+
+  SELECT * INTO v_currency FROM public.currencies WHERE id = v_currency_id FOR UPDATE;
+  IF NOT FOUND OR v_currency.pdh_reserves <= 0 THEN
+    RAISE EXCEPTION 'No hay respaldo de emisión suficiente';
+  END IF;
+  SELECT * INTO v_denom FROM public.banknote_denominations
+  WHERE id = p_denomination_id AND national_bank_id = p_bank_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Denominación inexistente'; END IF;
+
+  v_amount := v_denom.value * 432 * p_boxes;
+  v_circulation := GREATEST(0, v_currency.printed_amount - v_currency.burned_amount + v_amount);
+  UPDATE public.currencies SET printed_amount = printed_amount + v_amount,
+    exchange_rate_to_pdh = CASE WHEN is_fixed_rate THEN exchange_rate_to_pdh ELSE pdh_reserves / NULLIF(v_circulation, 0) END,
+    updated_at = now() WHERE id = v_currency.id;
+  UPDATE public.banknote_denominations SET boxes_printed = boxes_printed + p_boxes, updated_at = now() WHERE id = v_denom.id;
+  INSERT INTO public.national_bank_transactions
+    (national_bank_id, transaction_type, amount_local, currency_local, is_symbolic, description, status)
+  VALUES (p_bank_id, 'banknote_printing', v_amount, v_currency.iso_symbol, false,
+    format('Impresión de %s caja(s) de denominación %s', p_boxes, v_denom.value), 'executed');
+END; $$;
+
+REVOKE ALL ON FUNCTION public.print_banknote_boxes(text, text, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.print_banknote_boxes(text, text, integer) TO authenticated;
