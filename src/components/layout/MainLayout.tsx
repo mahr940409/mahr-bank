@@ -21,6 +21,7 @@ const routeTitles: Record<string, string> = {
   "/private-banks": "Bancos Privados",
   "/admin": "Administración",
   "/calculator": "Calculadora",
+  "/monetary-authorities": "Bancos Centrales",
 };
 
 function getTitle(pathname: string) {

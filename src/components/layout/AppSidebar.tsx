@@ -13,6 +13,7 @@ import {
   Wallet,
   Banknote,
   Calculator,
+  Landmark,
 } from "lucide-react";
 import {
   Sidebar,
@@ -55,6 +56,7 @@ const geo: Item[] = [
   { to: "/countries", label: "Países", icon: Globe },
   { to: "/national-banks", label: "Bancos Nacionales", icon: Building },
   { to: "/private-banks", label: "Bancos Privados", icon: Building },
+  { to: "/monetary-authorities", label: "Bancos Centrales", icon: Landmark },
 ];
 
 const system: Item[] = [{ to: "/admin", label: "Administración", icon: Settings }];

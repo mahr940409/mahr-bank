@@ -23,6 +23,7 @@ import NotFound from "./pages/NotFound";
 import Calculator from "./pages/Calculator";
 import CashOut from "./pages/CashOut";
 import Negotiables from "./pages/Negotiables";
+import MonetaryAuthorities from "./pages/MonetaryAuthorities";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +53,7 @@ const App = () => (
               <Route path="/calculator" element={<Calculator />} />
               <Route path="/cash-out" element={<CashOut />} />
               <Route path="/negotiables" element={<Negotiables />} />
+              <Route path="/monetary-authorities" element={<MonetaryAuthorities />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
